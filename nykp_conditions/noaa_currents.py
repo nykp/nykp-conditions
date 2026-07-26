@@ -1,6 +1,6 @@
 import os
 from argparse import ArgumentParser
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Optional, Sequence
 from urllib.request import urlretrieve
 
@@ -12,10 +12,24 @@ from utils.scripts import try_main
 from utils.slack import NykpSlackChannels, post_message, post_file
 from utils.units import knots_to_mph
 
-CURRENTS_CSV_URL_BASE = 'https://tidesandcurrents.noaa.gov/noaacurrents/DownloadPredictions?'
+CURRENTS_CSV_URL_BASE = 'https://api.tidesandcurrents.noaa.gov/dpapi/prod/webapi/currentPredictionsDownload'
 CURRENTS_CSV_DATE_FMT = 'YYYY-MM-DD'
 ONE_WEEK_STRS = ('w', '1w')
 TWO_DAY_STRS = ('48h', '2d')
+
+@dataclass
+class Station:
+    name: str
+    id: str
+    depth: Optional[str] = None
+
+
+class StationLibrary:
+    Hudson_River_Pier_92 = Station('Hudson River, Pier 92', 'NYH1928_12', '6 feet')
+    Hudson_River_Entrance = Station('Hudson River Entrance', 'NYH1927_13', '7 feet')
+
+
+default_nykp_station = StationLibrary.Hudson_River_Pier_92
 
 
 @dataclass
@@ -23,6 +37,9 @@ class CurrentsPredictions:
     table: pd.DataFrame
     link: str
     plot_img_path: Optional[str] = None
+
+    def __repr__(self):
+        return f"{type(self).__name__}\n{'\n'.join([repr(getattr(self, field.name)) for field in fields(self)])}\n"
 
 
 def _starts_with_one_of(s: str, candidates: str | Sequence[str], ignore_case=True) -> bool:
@@ -54,7 +71,7 @@ def parse_time_period(r: None | int | str) -> int:
 
 
 def retrieve_currents_table(
-        station_id: str,
+        station: str | Station,
         date: str | pendulum.DateTime | None = None,
         time_period=None,
         delete=True,
@@ -64,17 +81,32 @@ def retrieve_currents_table(
     elif isinstance(date, str):
         date = pendulum.parse(date)
 
+    if isinstance(station, str):
+        if hasattr(StationLibrary, station):
+            station_id = getattr(StationLibrary, station).id
+        else:
+            station_id = station
+    else:
+        station_id = station.id
+
     # Get csv of data
     time_period = parse_time_period(time_period)
-    csv_url_params = {'fmt': 'csv',
-                      'd': date.format(CURRENTS_CSV_DATE_FMT),
-                      'r': time_period,  # range {1 = 48 hrs, 2 = Weekly}
-                      'tz': 'LST%2fLDT',
-                      'id': station_id,
-                      't': 'am%2fpm'}
-    csv_url = CURRENTS_CSV_URL_BASE + '&'.join([f"{k}={v}" for k, v in csv_url_params.items()])
+    csv_url_params = {
+        'id': station_id,
+        'start_date': date.format(CURRENTS_CSV_DATE_FMT),
+        'range': time_period,  # range {1 = 48 hrs, 2 = Weekly}
+        'date_timeUnits': 'am%2fpm',
+        'interval': 'MAX_SLACK',
+        'threshold': 'leEq',
+        'thresholdValue': '',
+        'time_zone': 'LST_LDT',
+        'units': 1,
+        'format': 'csv',
+
+    }
+    csv_url = CURRENTS_CSV_URL_BASE + '?' + '&'.join([f"{k}={v}" for k, v in csv_url_params.items()]) + '&'
     csv_filename = f"current_predictions_{station_id}_{date}.csv"
-    station_link = f"https://tidesandcurrents.noaa.gov/noaacurrents/Predictions?id={station_id}"
+    station_link = f"https://tidesandcurrents.noaa.gov/noaacurrents/predictions.html?id={station_id}"
     (_, msg) = urlretrieve(csv_url, csv_filename)
     try:
         df = pd.read_csv(csv_filename)
@@ -86,36 +118,32 @@ def retrieve_currents_table(
     return CurrentsPredictions(df, station_link)
 
 
-@dataclass
-class Station:
-    name: str
-    id: str
-    depth: Optional[str] = None
-
-
-HUDSON_RIVER_PIER_92 = Station('Hudson River, Pier 92', 'NYH1928', '6 feet')
-HUDSON_RIVER_ENTRANCE = Station('Hudson River Entrance', 'NYH1927_13')
-default_nykp_station = HUDSON_RIVER_PIER_92
-
-
 def format_currents_table(df: pd.DataFrame, date=None) -> str:
     if date is None:
         date = pendulum.today()
     if not isinstance(date, str):
         date = date.format('YYYY-MM-DD')
-    col_renames = {'Date_Time (LST/LDT)': 'datetime',
-                   'Event': 'stage',
+    col_renames = {'Date_Time (LST_LDT)': 'datetime',
                    'Speed (knots)': 'knots'}
     df = rename_cols(df, col_renames)
     df['date'] = df['datetime'].map(lambda dts: dts.split(' ')[0])
     df['time'] = df['datetime'].map(lambda dts: ' '.join(dts.split(' ')[1:]))
     df['mph'] = df['knots'].map(knots_to_mph)
+    stages = []
+    for val in df['knots']:
+        if val > 0.1:
+            stages.append('max flood')
+        elif val < -0.1:
+            stages.append('max ebb')
+        else:
+            stages.append('slack')
+    df['stage'] = stages
     text = ''
     today_df = df[df['date'] == date]
     for _, row in today_df.iterrows():
         text += f"{row['time']}  "
         text += row['stage']
-        if pd.notna(row['mph']):
+        if row['stage'] != 'slack':
             text += f" ({row['mph']:.1f} mph)"
         text += '\n'
     return text.rstrip()
