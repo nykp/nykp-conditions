@@ -22,6 +22,18 @@ def get_client(token=None, user=False):
     return slack_sdk.WebClient(token=token)
 
 
+def get_channel_id(client: slack_sdk.WebClient, name: str) -> str:
+    channel_map = {}
+    for channel in client.conversations_list()['channels']:
+        try:
+            if channel['name'] in channel_map:
+                raise ValueError(f"Channel already in channel map: {repr(channel['name'])}")
+            channel_map[channel['name']] = channel['id']
+        except:
+            pass
+    return channel_map[name]
+
+
 def post_message(text: Optional[str], channel=NykpSlackChannels.test_python_api, client=None, token=None, **kwargs):
     try:
         if client is None:
@@ -47,8 +59,9 @@ def post_text_attachment(
                         **kwargs)
 
 
-def post_file(path: str, channel: str, comment=None, client=None, token=None) -> dict:
+def post_file(path: str, title: str, channel: str, comment=None, client=None, token=None) -> dict:
     if client is None:
         client = get_client(token=token)
-    resp = client.files_upload(file=path, channels=channel, initial_comment=comment)
+    channel_id = get_channel_id(client, channel)
+    resp = client.files_upload_v2(file=path, title=title, channel=channel_id, initial_comment=comment)
     return resp.data['file']

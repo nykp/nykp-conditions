@@ -88,7 +88,7 @@ def post_forecast(channel: str, lat_lon: _LatLonType = DEFAULT_LAT_LON, text=Tru
     else:
         msg = None
     if img_path:
-        post_file(img_path, channel=channel, comment=msg)
+        post_file(img_path, title="Forecast", channel=channel, comment=msg)
     elif msg:
         post_message(msg, channel=channel)
 

@@ -173,7 +173,8 @@ def post_currents(channel: str, station: Optional[Station] = None, date=None, ti
         post_txt += f"*{date_str}*\n{table_txt}"
     response = post_message(post_txt, channel=channel, unfurl_links=False)
     if predictions.plot_img_path:
-        file = post_file(predictions.plot_img_path, channel=channel)
+        title = f"Currents at {station}"
+        file = post_file(predictions.plot_img_path, title=title, channel=channel)
 
 
 """----------------------------------------------------------------------------

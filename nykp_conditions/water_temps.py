@@ -107,7 +107,7 @@ def post_water_temps(channel: str, station: Optional[str] = None) -> None:
     plot_img_path = plot_temps_file(water_temps, station)
     observations_url = OBSERVATIONS_URL_TEMPLATE.format(id=station.id)
     post_txt = f"<{observations_url}|NOAA water temperature observations at {station.name} for the last 36 hours>\n"
-    post_file(plot_img_path, channel, comment=post_txt)
+    post_file(plot_img_path, title="Water temperature", channel=channel, comment=post_txt)
 
 
 def _cleanup():
