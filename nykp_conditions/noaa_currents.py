@@ -23,6 +23,12 @@ class Station:
     id: str
     depth: Optional[str] = None
 
+    def __repr__(self):
+        s = f"{self.name} ({self.id})"
+        if self.depth is not None:
+            s += f", {self.depth}"
+        return s
+
 
 class StationLibrary:
     Hudson_River_Pier_92 = Station('Hudson River, Pier 92', 'NYH1928_12', '6 feet')
@@ -157,8 +163,8 @@ def format_currents_table(df: pd.DataFrame, date=None) -> str:
 def post_currents(channel: str, station: Optional[Station] = None, date=None, time_period=None, days=1) -> None:
     if station is None:
         station = default_nykp_station
-    predictions = retrieve_currents_table(station_id=station.id, date=date, time_period=time_period)
-    dates = sorted(predictions.table['Date_Time (LST/LDT)'].map(lambda dt: dt.split(' ')[0]).unique())
+    predictions = retrieve_currents_table(station=station.id, date=date, time_period=time_period)
+    dates = sorted(predictions.table['Date_Time (LST_LDT)'].map(lambda dt: dt.split(' ')[0]).unique())
     dates = dates[:days]
     post_txt = f"<{predictions.link}|NOAA current predictions at {station.name} (depth: {station.depth})>\n"
     for d in dates:
