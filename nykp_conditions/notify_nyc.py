@@ -2,7 +2,7 @@ from argparse import ArgumentParser
 
 from dataclasses import dataclass, fields
 from datetime import datetime, timedelta
-from typing import List, Optional, Self
+from typing import List, Union
 
 import feedparser
 import pendulum
@@ -37,18 +37,18 @@ class NotifyAlert:
                 self.published = pendulum.parse(self.published)
 
     @classmethod
-    def parse(cls, entry: dict) -> Self:
+    def parse(cls, entry: dict) -> 'NotifyAlert':
         field_names = [f.name for f in fields(cls)]
         kws = {field: entry.get(field) for field in field_names}
         return cls(**kws)
 
 
 def get_waterbody_advisories(
-        start_dt: datetime | None = None,
-        end_dt: datetime | None = None,
+        start_dt: Union[datetime, None] = None,
+        end_dt: Union[datetime, None] = None,
         url: str = NOTIFY_NYC_URL,
 ) -> list[NotifyAlert]:
-    
+
     def f(alert: NotifyAlert) -> bool:
         if WATERBODY_ADVISORY not in alert.title:
             return False
@@ -57,7 +57,7 @@ def get_waterbody_advisories(
         if end_dt and alert.published > end_dt:
             return False
         return True
-    
+
     feed = feedparser.parse(url)
     alerts = map(NotifyAlert.parse, feed[ALERTS_FIELD])
     return list(filter(f, alerts))
@@ -65,8 +65,8 @@ def get_waterbody_advisories(
 
 def post_waterbody_advisories(
         channel: str,
-        start_time: Optional[datetime | str] = None,
-        end_time: Optional[datetime | str] = None,
+        start_time: Union[datetime, str, None] = None,
+        end_time: Union[datetime, str, None] = None,
         days=1
 ):
     if isinstance(end_time, str):
@@ -84,7 +84,7 @@ def post_waterbody_advisories(
         pretext = f"{advisory.title} ({advisory.published})"
         links = find_links(advisory.summary)
         if links:
-            pretext += '\nLinks:\n' + '\n'.join(links) 
+            pretext += '\nLinks:\n' + '\n'.join(links)
         response = post_text_attachment(pretext=pretext, text=advisory.summary, channel=channel)
 
 

@@ -1,10 +1,10 @@
 import pdb
 import traceback
 from argparse import ArgumentParser
-from typing import Callable, Optional, Type
+from typing import Callable, Type, Union
 
 
-def str2bool(s: Optional[bool | str], ignore_errors=False) -> Optional[bool | str]:
+def str2bool(s: Union[bool, str, None], ignore_errors=False) -> Union[bool, str, None]:
     try:
         if isinstance(s, bool) or s is None:
             return s

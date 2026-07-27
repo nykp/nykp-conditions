@@ -65,7 +65,7 @@ def get_forecast_text(lat_lon: _LatLonType = DEFAULT_LAT_LON) -> ForecastText:
 
     title_parts = list(title_tag.stripped_strings)
     title_str = f'{title_parts[0]}, {title_parts[3]}'
-    
+
     num_relevant = 2
     forecast_parts = list(forecast_tag.stripped_strings)
     forecast_str_parts = []

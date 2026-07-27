@@ -1,7 +1,7 @@
 import os
 from argparse import ArgumentParser
 from dataclasses import dataclass, fields
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Union
 from urllib.request import urlretrieve
 
 import pandas as pd
@@ -39,10 +39,15 @@ class CurrentsPredictions:
     plot_img_path: Optional[str] = None
 
     def __repr__(self):
-        return f"{type(self).__name__}\n{'\n'.join([repr(getattr(self, field.name)) for field in fields(self)])}\n"
+        lines = [
+            type(self).__name__,
+            '\n'.join([repr(getattr(self, field.name)) for field in fields(self)]),
+            '',
+        ]
+        return '\n'.join(lines)
 
 
-def _starts_with_one_of(s: str, candidates: str | Sequence[str], ignore_case=True) -> bool:
+def _starts_with_one_of(s: str, candidates: Union[str, Sequence[str]], ignore_case=True) -> bool:
     if isinstance(candidates, str):
         candidates = [candidates]
     if ignore_case:
@@ -51,7 +56,7 @@ def _starts_with_one_of(s: str, candidates: str | Sequence[str], ignore_case=Tru
     return any([s.startswith(c) for c in candidates])
 
 
-def parse_time_period(r: None | int | str) -> int:
+def parse_time_period(r: Union[None, int, str]) -> int:
     if r is None:
         return 1  # Default
     if isinstance(r, str):
@@ -71,8 +76,8 @@ def parse_time_period(r: None | int | str) -> int:
 
 
 def retrieve_currents_table(
-        station: str | Station,
-        date: str | pendulum.DateTime | None = None,
+        station: Union[str, Station],
+        date: Union[str, pendulum.DateTime, None] = None,
         time_period=None,
         delete=True,
 ) -> CurrentsPredictions:
