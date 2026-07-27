@@ -2,9 +2,9 @@ name: Post daily conditions to Slack
 
 on:
   schedule:
-    # 12:00 UTC = 8am EDT / 7am EST. Runs every morning.
+    # 12:30 UTC = 9am EDT / 8am EST. Runs every morning.
     # Note: scheduled runs can be delayed by GitHub during peak times.
-    - cron: '0 12 * * *'
+    - cron: '30 12 * * *'
   workflow_dispatch:
     inputs:
       channel:
