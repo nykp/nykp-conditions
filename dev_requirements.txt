@@ -1,7 +1,0 @@
-feedparser
-jupyter
-matplotlib
-numpy
-pandas
-pendulum
-slack-sdk
