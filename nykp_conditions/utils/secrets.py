@@ -5,11 +5,19 @@ SLACK_BOT_TOKEN_FILE = os.path.join(SECRETS_DIR, 'slack_app_bot_token')
 SLACK_USER_TOKEN_FILE = os.path.join(SECRETS_DIR, 'slack_app_user_token')
 
 
-def get_slack_bot_token():
-    with open(SLACK_BOT_TOKEN_FILE) as f:
+def _get_token(env_var, path):
+    # Prefer an environment variable (e.g. in CI); fall back to the local
+    # .secrets file for interactive/local use.
+    token = os.environ.get(env_var)
+    if token:
+        return token.strip()
+    with open(path) as f:
         return f.readlines()[0].strip()
+
+
+def get_slack_bot_token():
+    return _get_token('SLACK_BOT_TOKEN', SLACK_BOT_TOKEN_FILE)
 
 
 def get_slack_user_token():
-    with open(SLACK_USER_TOKEN_FILE) as f:
-        return f.readlines()[0].strip()
+    return _get_token('SLACK_USER_TOKEN', SLACK_USER_TOKEN_FILE)

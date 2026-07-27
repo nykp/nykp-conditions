@@ -1,0 +1,41 @@
+name: Post daily conditions to Slack
+
+on:
+  schedule:
+    # 12:00 UTC = 8am EDT / 7am EST. Runs every morning.
+    # Note: scheduled runs can be delayed by GitHub during peak times.
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Slack channel to post to'
+        default: 'hudson-conditions'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  post-conditions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: pip install .
+
+      - name: Post conditions to Slack
+        working-directory: nykp_conditions
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          MPLBACKEND: Agg
+        run: python post_conditions.py --channel "${{ github.event.inputs.channel || 'hudson-conditions' }}"
