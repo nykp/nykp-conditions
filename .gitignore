@@ -4,3 +4,11 @@ __pycache__/
 .secrets/
 venv/
 cache/
+
+# Build / packaging artifacts
+build/
+dist/
+*.egg-info/
+
+# Test artifacts
+.pytest_cache/
