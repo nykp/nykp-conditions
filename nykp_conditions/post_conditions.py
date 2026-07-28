@@ -69,14 +69,14 @@ def main(args):
     sections = []
     if args.currents:
         sections.append(('currents', lambda: post_currents(channel, days=args.days)))
-    if args.advisories:
-        sections.append(('advisories', lambda: post_waterbody_advisories(channel, days=args.days)))
-    if args.precip:
-        sections.append(('precip', lambda: post_observed_precip(channel)))
     if args.water_temp:
         sections.append(('water temperature', lambda: post_water_temps(channel)))
     if args.forecast:
         sections.append(('forecast', lambda: post_forecast(channel)))
+    if args.precip:
+        sections.append(('precip', lambda: post_observed_precip(channel)))
+    if args.advisories:
+        sections.append(('advisories', lambda: post_waterbody_advisories(channel, days=args.days)))
 
     failed = post_sections(sections)
     if failed:

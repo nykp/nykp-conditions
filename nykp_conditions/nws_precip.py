@@ -234,7 +234,7 @@ def _format_hour(when: datetime) -> str:
 def format_precip_post(precip: ObservedPrecip) -> str:
     """Build the Slack message body for the observed precipitation."""
     window = f"{_format_hour(precip.start)} - {_format_hour(precip.end)}"
-    header = (f"<{precip.link}|Observed precipitation at {precip.station_name} "
+    header = (f"<{precip.link}|Recent precipitation measured at {precip.station_name} "
               f"({precip.station})>, {window}")
     if precip.total_mm == 0:
         return f"{header}\n*No measurable precipitation.*"
