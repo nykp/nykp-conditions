@@ -193,7 +193,11 @@ def get_observed_precip(
 
 
 def plot_precip_file(precip: ObservedPrecip, path: str | None = None) -> str:
-    """Plot hourly bars with a cumulative total to a PNG, returning the path."""
+    """Plot the hourly series to a PNG, returning the path written.
+
+    Hourly rates only: the window total goes in the message text instead, where
+    it reads more precisely than it would off a second axis.
+    """
     if path is None:
         fd, path = tempfile.mkstemp(prefix=f'precip_{precip.station}_', suffix='.png')
         os.close(fd)
@@ -206,18 +210,13 @@ def plot_precip_file(precip: ObservedPrecip, path: str | None = None) -> str:
     fig, ax = plt.subplots(figsize=(10, 4))
     try:
         # Bars are an hour wide in date units, aligned to the hour they cover.
-        ax.bar(hourly_in.index, hourly_in.values, width=1 / 24, align='edge', label='Hourly')
+        ax.bar(hourly_in.index, hourly_in.values, width=1 / 24, align='edge')
         ax.set_ylabel('Hourly (in)')
+        ax.set_ylim(bottom=0)
         # matplotlib renders tz-aware timestamps in UTC unless told otherwise,
         # which would shift every label by the station's offset.
         ax.xaxis.set_major_formatter(DateFormatter('%-I%p', tz=hourly_in.index.tz))
         ax.set_title(title)
-
-        cumulative = ax.twinx()
-        cumulative.plot(hourly_in.index, hourly_in.fillna(0).cumsum(), color='0.3', label='Cumulative')
-        cumulative.set_ylabel('Cumulative (in)')
-        cumulative.grid(False)
-        cumulative.set_ylim(bottom=0)
 
         fig.autofmt_xdate(rotation=45)
         fig.savefig(path, bbox_inches='tight', pad_inches=0.25)
