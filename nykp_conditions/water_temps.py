@@ -1,20 +1,21 @@
+"""NOAA water temperature observations and the plot posted with them."""
+
 import json
 import os
 import tempfile
 from argparse import ArgumentParser
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 from urllib.request import urlopen, urlretrieve
 
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 from matplotlib.dates import DateFormatter
-from matplotlib.transforms import Bbox
 
-from utils.plot import DateTimeFormats, format_time_axis
+from utils.plot import DateTimeFormats
 from utils.scripts import try_main
-from utils.slack import NykpSlackChannels, post_message, post_file
+from utils.slack import NykpSlackChannels, post_file
 
 WATER_TEMPS_URL_BASE = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter'
 OBSERVATIONS_URL_TEMPLATE = 'https://tidesandcurrents.noaa.gov/stationhome.html?id={id}#obs'
@@ -31,7 +32,12 @@ class Station:
 
 def get_water_temps(
         station_id: Optional[str] = None, hours: int = 36, units='english', path=None
-) -> (Station, pd.Series):
+) -> Tuple[Station, pd.Series]:
+    """Fetch hourly water temperatures for a station over the last `hours`.
+
+    Returns the station metadata and a time-indexed (UTC) temperature series.
+    Pass `path` to also keep the raw JSON response at that location.
+    """
     if station_id is None:
         station_id = THE_BATTERY_STATION_ID
     params = {
@@ -50,7 +56,7 @@ def get_water_temps(
         with urlopen(url) as resp:
             data_dct = json.load(resp)
     else:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
         urlretrieve(url, path)
         with open(path) as f:
             data_dct = json.load(f)
@@ -61,7 +67,8 @@ def get_water_temps(
     return station_info, water_temps
 
 
-def plot_temps_file(water_temps: pd.Series, station: Station, path=None):
+def plot_temps_file(water_temps: pd.Series, station: Station, path=None) -> str:
+    """Plot the temperature series to a PNG, returning the path written."""
     start_dt = water_temps.index[0]
     end_dt = water_temps.index[-1]
     title_dt_fmt = '%H:%M:%S %m/%d/%Y'
@@ -89,6 +96,7 @@ def plot_temps_file(water_temps: pd.Series, station: Station, path=None):
 
 
 def post_water_temps(channel: str, station: Optional[str] = None) -> None:
+    """Post the water temperature plot for the last 36 hours to Slack."""
     station, water_temps = get_water_temps(station_id=station)
     observations_url = OBSERVATIONS_URL_TEMPLATE.format(id=station.id)
     post_txt = f"<{observations_url}|NOAA water temperature observations at {station.name} for the last 36 hours>\n"
