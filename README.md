@@ -3,18 +3,20 @@
 Posts a daily Hudson River conditions summary to the New York Kayak Polo Slack.
 
 Every morning a GitHub Actions run collects current predictions, water
-temperature, the NWS forecast, and any Notify NYC waterbody advisories, and
-posts them to `#hudson-conditions`.
+temperature, the NWS forecast, observed precipitation, and any Notify NYC
+waterbody advisories, and posts them to `#hudson-conditions`.
 
 ## What gets posted
+
+Listed in the order they're posted:
 
 | Section | Source | Module |
 | --- | --- | --- |
 | Tidal current predictions (slack / max flood / max ebb) | NOAA Tides & Currents | `noaa_currents.py` |
-| Waterbody advisories (e.g. sewage discharge) | Notify NYC RSS feed | `notify_nyc.py` |
 | Water temperature, last 36 hours, with a plot | NOAA Tides & Currents | `water_temps.py` |
 | Forecast meteogram and text summary | forecast.weather.gov (scraped) | `nws_forecast.py` |
 | Observed precipitation, last 24 hours, with a plot | api.weather.gov station observations | `nws_precip.py` |
+| Waterbody advisories (e.g. sewage discharge) | Notify NYC RSS feed | `notify_nyc.py` |
 
 Each section posts independently. If one upstream source is down the others
 still go out; the run then fails at the end so the failure is visible in the
@@ -22,18 +24,44 @@ Actions log rather than silently swallowed.
 
 ## How it runs
 
-`.github/workflows/daily-conditions.yml` runs `post_conditions.py` on a cron
-schedule at 12:30 UTC (8:30am EDT / 7:30am EST), and can also be triggered
-manually via **workflow_dispatch**, where you can choose the target channel.
+`.github/workflows/daily-conditions.yml` runs `post_conditions.py`. Its only
+trigger is **workflow_dispatch** — there is deliberately no GitHub `schedule:`
+cron in the workflow.
 
-GitHub can delay scheduled runs during peak times, so the exact posting time
-drifts by a few minutes.
+The daily run is started externally by a [cron-job.org](https://cron-job.org)
+job at 8:30am `America/New_York`, which POSTs to the workflow dispatch API:
+
+```
+POST https://api.github.com/repos/nykp/noaa-currents/actions/workflows/daily-conditions.yml/dispatches
+{"ref": "main", "inputs": {"channel": "hudson-conditions"}}
+```
+
+It authenticates with a fine-grained personal access token scoped to this
+repository with **Actions: read and write** — the token's only capability is
+starting workflow runs here. The same endpoint backs the "Run workflow" button
+in the Actions tab, so manual runs still work and can target a different
+channel.
+
+GitHub's own `schedule:` trigger was dropped because it ran two to three hours
+late in practice (10:58am and 11:22am EDT against an 8:30am cron), well past the
+~8am window when Notify NYC publishes waterbody advisories after heavy rain.
+Scheduled events are the lowest-priority queue on shared runners and carry no
+delivery guarantee. Dispatched runs start within seconds, and an external
+schedule also follows DST, which a UTC cron cannot.
+
+The tradeoff is that nothing else fires this workflow, and the two ways that
+can silently stop are both invisible from the Actions tab: the PAT expiring,
+and cron-job.org disabling a job after repeated failures. Keep failure
+notifications enabled on the cron job.
 
 ### Secrets
 
 The workflow needs one repository secret:
 
 - `SLACK_BOT_TOKEN` — the bot token for the Slack app (`xoxb-…`).
+
+(The GitHub PAT that triggers the run isn't stored here — it lives in the
+cron-job.org job's `Authorization` header.)
 
 The bot must be a member of any channel it posts to, and the token needs
 `chat:write`, `files:write`, and `channels:read` (used to resolve a channel
@@ -44,7 +72,7 @@ back to `.secrets/slack_app_bot_token` (gitignored). Either works.
 
 ## Running locally
 
-Requires **Python 3.11+**; the scheduled job and local development both run on
+Requires **Python 3.11+**; the daily job and local development both run on
 3.13. Timezone handling uses the stdlib `zoneinfo`, so there's no `pytz`
 dependency.
 
@@ -74,6 +102,7 @@ cd nykp_conditions
 python noaa_currents.py --station NYH1928_12 --range 1w
 python water_temps.py --channel test-python-api
 python nws_forecast.py --keep          # Leaves the downloaded plot in cache/
+python nws_precip.py --station KNYC --hours 24
 python notify_nyc.py --days 7
 ```
 
@@ -110,8 +139,8 @@ nykp_conditions/
     secrets.py         Token from env var or .secrets/
     scripts.py         Shared CLI plumbing (str2bool, try_main)
     data.py, geo.py, plot.py, units.py
+  notebooks/           Exploratory notebooks (untracked, not used by the job)
 tests/                 pytest suite
-notebooks/             Exploratory notebooks (not used by the job)
 ```
 
 ## Notes
