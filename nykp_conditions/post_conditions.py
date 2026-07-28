@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 
+"""Post the daily conditions summary to Slack.
+
+Entry point for the scheduled GitHub Actions run. Each section is posted
+independently: one upstream source being down shouldn't cost us the rest of
+the morning's post, so failures are collected and reported at the end, with a
+nonzero exit so the workflow run still shows as failed.
+"""
+
+import sys
+import traceback
 from argparse import ArgumentParser
+from typing import Callable, List, Tuple
 
 from noaa_currents import post_currents
 from notify_nyc import post_waterbody_advisories
@@ -27,8 +38,25 @@ def _add_config_fields(parser: ArgumentParser):
     return parser
 
 
+def post_sections(sections: List[Tuple[str, Callable[[], None]]]) -> List[str]:
+    """Run each (name, post-callable) in order, returning the names that failed.
+
+    Errors are printed with a traceback rather than raised, so a failure in one
+    section doesn't prevent the others from posting.
+    """
+    failed = []
+    for name, post in sections:
+        try:
+            post()
+        except Exception:
+            failed.append(name)
+            print(f"ERROR posting {name}:", file=sys.stderr)
+            traceback.print_exc()
+    return failed
+
+
 def parse_args() -> ArgumentParser:
-    parser = ArgumentParser()
+    parser = ArgumentParser(description=__doc__)
     parser.add_argument('--channel', type=str, default=None)
     parser.add_argument('--days', type=int, default=1)
     parser = _add_config_fields(parser)
@@ -36,20 +64,23 @@ def parse_args() -> ArgumentParser:
 
 
 def main(args):
-    if args.channel is not None:
-        channel = args.channel
-    else:
-        channel = NykpSlackChannels.test_python_api
+    channel = args.channel if args.channel is not None else NykpSlackChannels.test_python_api
+
+    sections = []
     if args.currents:
-        post_currents(channel, days=args.days)
+        sections.append(('currents', lambda: post_currents(channel, days=args.days)))
     if args.advisories:
-        post_waterbody_advisories(channel, days=args.days)
+        sections.append(('advisories', lambda: post_waterbody_advisories(channel, days=args.days)))
     if args.precip:
-        post_observed_precip(channel)
+        sections.append(('precip', lambda: post_observed_precip(channel)))
     if args.water_temp:
-        post_water_temps(channel)
+        sections.append(('water temperature', lambda: post_water_temps(channel)))
     if args.forecast:
-        post_forecast(channel)
+        sections.append(('forecast', lambda: post_forecast(channel)))
+
+    failed = post_sections(sections)
+    if failed:
+        raise RuntimeError(f"Failed to post {len(failed)} of {len(sections)} sections: {', '.join(failed)}")
 
 
 if __name__ == '__main__':
