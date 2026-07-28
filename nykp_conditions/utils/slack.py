@@ -41,6 +41,7 @@ def _with_retries(func: Callable, *args, max_attempts: int = 3, base_delay: floa
 
 
 def get_client(token=None, user=False):
+    """Slack client, using the bot token unless a user token is requested."""
     if token is None:
         if user:
             token = get_slack_user_token()
@@ -49,19 +50,25 @@ def get_client(token=None, user=False):
     return slack_sdk.WebClient(token=token)
 
 
-def get_channel_id(client: slack_sdk.WebClient, name: str) -> str:
-    channel_map = {}
-    for channel in client.conversations_list()['channels']:
-        try:
-            if channel['name'] in channel_map:
-                raise ValueError(f"Channel already in channel map: {repr(channel['name'])}")
-            channel_map[channel['name']] = channel['id']
-        except:
-            pass
-    return channel_map[name]
+def get_channel_id(client: slack_sdk.WebClient, name: str, page_limit: int = 200) -> str:
+    """Look up a channel's ID by name.
+
+    Pages through conversations_list: it returns at most one page at a time,
+    so an unpaginated call silently misses channels beyond the first page.
+    """
+    cursor = None
+    while True:
+        resp = client.conversations_list(limit=page_limit, cursor=cursor)
+        for channel in resp['channels']:
+            if channel.get('name') == name:
+                return channel['id']
+        cursor = resp.get('response_metadata', {}).get('next_cursor')
+        if not cursor:
+            raise ValueError(f"No Slack channel named {name!r} visible to this token")
 
 
 def post_message(text: Optional[str], channel=NykpSlackChannels.test_python_api, client=None, token=None, **kwargs):
+    """Post a plain text message to a channel."""
     try:
         if client is None:
             client = get_client(token=token)
@@ -81,6 +88,7 @@ def post_text_attachment(
         text: str, pretext: Optional[str] = None, channel=NykpSlackChannels.test_python_api, client=None,
         token=None, **kwargs
 ):
+    """Post a message with the body in an attachment below bolded pretext."""
     bold_pretext = f"*{pretext}*"
     attachment = Attachment(text=text)
     return post_message(text=bold_pretext, channel=channel, client=client, token=token, attachments=[attachment],
@@ -88,6 +96,7 @@ def post_text_attachment(
 
 
 def post_file(path: str, title: str, channel: str, comment=None, client=None, token=None) -> dict:
+    """Upload a file to a channel, optionally with an initial comment."""
     if client is None:
         client = get_client(token=token)
     channel_id = get_channel_id(client, channel)

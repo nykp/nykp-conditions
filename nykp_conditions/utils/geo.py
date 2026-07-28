@@ -1,3 +1,5 @@
+"""Geographic types shared across the conditions sources."""
+
 from dataclasses import dataclass
 
 
