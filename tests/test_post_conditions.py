@@ -61,7 +61,10 @@ def test_main_succeeds_when_all_sections_post(monkeypatch):
 
     args = pc.parse_args().parse_args(['--channel', 'test-channel'])
     pc.main(args)
-    assert posted == ['currents', 'advisories', 'precip', 'water-temp', 'forecast']
+    # Compared order-agnostically: which sections run is the contract here,
+    # while the order they're posted in is a presentation choice that changes.
+    # `post_sections` running its list in order is covered separately above.
+    assert sorted(posted) == sorted(['currents', 'advisories', 'precip', 'water-temp', 'forecast'])
 
 
 def test_sections_can_be_disabled(monkeypatch):
@@ -74,4 +77,4 @@ def test_sections_can_be_disabled(monkeypatch):
 
     args = pc.parse_args().parse_args(['--currents', 'false', '--forecast', 'no', '--precip', '0'])
     pc.main(args)
-    assert posted == ['advisories', 'water-temp']
+    assert sorted(posted) == sorted(['advisories', 'water-temp'])
