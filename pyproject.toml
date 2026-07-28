@@ -22,3 +22,12 @@ dependencies = [
     "seaborn",
     "slack-sdk",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools]
+packages = ["nykp_conditions", "nykp_conditions.utils"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
