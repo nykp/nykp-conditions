@@ -1,4 +1,11 @@
+"""NOAA tidal current predictions (slack/max flood/max ebb) for the Hudson.
+
+Predictions come from the tidesandcurrents CSV download endpoint, which is
+formatted into a compact per-day summary for the daily Slack post.
+"""
+
 import os
+import tempfile
 from argparse import ArgumentParser
 from dataclasses import dataclass, fields
 from typing import Optional, Sequence, Union
@@ -63,6 +70,11 @@ def _starts_with_one_of(s: str, candidates: Union[str, Sequence[str]], ignore_ca
 
 
 def parse_time_period(r: Union[None, int, str]) -> int:
+    """Normalize a time-period argument to the API's range code.
+
+    Accepts the codes themselves (1 = 48 hours, 2 = weekly) or friendly
+    strings ('48h', '2d', 'w', '1w'). Defaults to 48 hours.
+    """
     if r is None:
         return 1  # Default
     if isinstance(r, str):
@@ -74,19 +86,42 @@ def parse_time_period(r: Union[None, int, str]) -> int:
         if r not in (1, 2):
             raise ValueError(f"Invalid integer value for range: {r}. Accepted values: {{1 = 48 hrs, 2 = Weekly}}")
         return r
-    if _starts_with_one_of(r, 'w'):
+    if _starts_with_one_of(r, ONE_WEEK_STRS):
         return 2
-    elif not _starts_with_one_of(r, TWO_DAY_STRS):
-        raise ValueError()
-    return 1
+    if _starts_with_one_of(r, TWO_DAY_STRS):
+        return 1
+    raise ValueError(
+        f"Invalid value for range: {r!r}. Accepted values: {ONE_WEEK_STRS + TWO_DAY_STRS}, or 1 (48 hrs) / 2 (weekly)"
+    )
+
+
+def currents_csv_url(station_id: str, date: pendulum.DateTime, time_period: int) -> str:
+    """Build the CSV download URL for a station's current predictions."""
+    csv_url_params = {
+        'id': station_id,
+        'start_date': date.format(CURRENTS_CSV_DATE_FMT),
+        'range': time_period,  # range {1 = 48 hrs, 2 = Weekly}
+        'date_timeUnits': 'am%2fpm',
+        'interval': 'MAX_SLACK',
+        'threshold': 'leEq',
+        'thresholdValue': '',
+        'time_zone': 'LST_LDT',
+        'units': 1,
+        'format': 'csv',
+    }
+    return CURRENTS_CSV_URL_BASE + '?' + '&'.join([f"{k}={v}" for k, v in csv_url_params.items()]) + '&'
 
 
 def retrieve_currents_table(
         station: Union[str, Station],
         date: Union[str, pendulum.DateTime, None] = None,
         time_period=None,
-        delete=True,
 ) -> CurrentsPredictions:
+    """Download current predictions for a station and return the parsed table.
+
+    The CSV is fetched into a temp directory that is removed on the way out,
+    success or failure, so nothing is left behind in the working directory.
+    """
     if date is None:
         date = pendulum.today()
     elif isinstance(date, str):
@@ -102,34 +137,23 @@ def retrieve_currents_table(
 
     # Get csv of data
     time_period = parse_time_period(time_period)
-    csv_url_params = {
-        'id': station_id,
-        'start_date': date.format(CURRENTS_CSV_DATE_FMT),
-        'range': time_period,  # range {1 = 48 hrs, 2 = Weekly}
-        'date_timeUnits': 'am%2fpm',
-        'interval': 'MAX_SLACK',
-        'threshold': 'leEq',
-        'thresholdValue': '',
-        'time_zone': 'LST_LDT',
-        'units': 1,
-        'format': 'csv',
-
-    }
-    csv_url = CURRENTS_CSV_URL_BASE + '?' + '&'.join([f"{k}={v}" for k, v in csv_url_params.items()]) + '&'
-    csv_filename = f"current_predictions_{station_id}_{date}.csv"
+    csv_url = currents_csv_url(station_id, date, time_period)
     station_link = f"https://tidesandcurrents.noaa.gov/noaacurrents/predictions.html?id={station_id}"
-    (_, msg) = urlretrieve(csv_url, csv_filename)
-    try:
-        df = pd.read_csv(csv_filename)
-    except:
-        print(msg)
-        raise
-    if delete:
-        os.remove(csv_filename)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        csv_path = os.path.join(tmp_dir, f"current_predictions_{station_id}_{date}.csv")
+        (_, headers) = urlretrieve(csv_url, csv_path)
+        try:
+            df = pd.read_csv(csv_path)
+        except Exception:
+            # The endpoint returns an error page with a 200, so surface what
+            # came back rather than only the parse error.
+            print(f"Failed to parse currents CSV from {csv_url}\nResponse headers:\n{headers}")
+            raise
     return CurrentsPredictions(df, station_link)
 
 
 def format_currents_table(df: pd.DataFrame, date=None) -> str:
+    """Render one day's predictions as lines of 'time  stage (speed)'."""
     if date is None:
         date = pendulum.today()
     if not isinstance(date, str):
@@ -155,26 +179,32 @@ def format_currents_table(df: pd.DataFrame, date=None) -> str:
         text += f"{row['time']}  "
         text += row['stage']
         if row['stage'] != 'slack':
-            text += f" ({row['mph']:.1f} mph)"
+            # Speed is signed to encode direction, which 'flood'/'ebb' already
+            # says, so show the magnitude rather than a confusing "-1.4 mph".
+            text += f" ({abs(row['mph']):.1f} mph)"
         text += '\n'
     return text.rstrip()
 
 
+def format_currents_post(predictions: CurrentsPredictions, station: Station, days: int = 1) -> str:
+    """Build the Slack message body: a header link plus one block per day."""
+    dates = sorted(predictions.table['Date_Time (LST_LDT)'].map(lambda dt: dt.split(' ')[0]).unique())
+    header = f"<{predictions.link}|NOAA current predictions at {station.name} (depth: {station.depth})>"
+    blocks = []
+    for d in dates[:days]:
+        date_str = pendulum.parse(d).format('dddd, MMMM D, YYYY')
+        blocks.append(f"*{date_str}*\n{format_currents_table(predictions.table, date=d)}")
+    return '\n'.join([header] + blocks)
+
+
 def post_currents(channel: str, station: Optional[Station] = None, date=None, time_period=None, days=1) -> None:
+    """Post current predictions for the next `days` days to Slack."""
     if station is None:
         station = default_nykp_station
     predictions = retrieve_currents_table(station=station.id, date=date, time_period=time_period)
-    dates = sorted(predictions.table['Date_Time (LST_LDT)'].map(lambda dt: dt.split(' ')[0]).unique())
-    dates = dates[:days]
-    post_txt = f"<{predictions.link}|NOAA current predictions at {station.name} (depth: {station.depth})>\n"
-    for d in dates:
-        table_txt = format_currents_table(predictions.table, date=d)
-        date_str = pendulum.parse(d).format('dddd, MMMM D, YYYY')
-        post_txt += f"*{date_str}*\n{table_txt}"
-    response = post_message(post_txt, channel=channel, unfurl_links=False)
+    post_message(format_currents_post(predictions, station, days=days), channel=channel, unfurl_links=False)
     if predictions.plot_img_path:
-        title = f"Currents at {station}"
-        file = post_file(predictions.plot_img_path, title=title, channel=channel)
+        post_file(predictions.plot_img_path, title=f"Currents at {station}", channel=channel)
 
 
 """----------------------------------------------------------------------------
@@ -203,7 +233,7 @@ def main(args):
     else:
         station = None
 
-    post_currents(channel, station=station, date=args.date, time_period=args.range)
+    post_currents(channel, station=station, date=args.date, time_period=args.range, days=args.days)
 
 
 if __name__ == '__main__':
