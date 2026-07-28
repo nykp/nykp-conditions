@@ -1,13 +1,13 @@
 import json
 import os
+import tempfile
 from argparse import ArgumentParser
 from dataclasses import dataclass
 from typing import Optional
-from urllib.request import urlretrieve
+from urllib.request import urlopen, urlretrieve
 
 import matplotlib.pyplot as plt
 import pandas as pd
-import pendulum
 import seaborn as sns
 from matplotlib.dates import DateFormatter
 from matplotlib.transforms import Bbox
@@ -19,20 +19,6 @@ from utils.slack import NykpSlackChannels, post_message, post_file
 WATER_TEMPS_URL_BASE = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter'
 OBSERVATIONS_URL_TEMPLATE = 'https://tidesandcurrents.noaa.gov/stationhome.html?id={id}#obs'
 THE_BATTERY_STATION_ID = '8518750'
-
-CACHE_DIR = './cache'
-_cleanup_paths = []
-
-
-def _init_cache(path=CACHE_DIR):
-    path_dirs = path.split('/')
-    node = path_dirs[0]
-    if not os.path.exists(node):
-        _cleanup_paths.append(node)
-    for d in path_dirs[1:]:
-        node += '/' + d
-        if not os.path.exists(node):
-            _cleanup_paths.append(node)
 
 
 @dataclass
@@ -60,14 +46,14 @@ def get_water_temps(
     param_str = '&'.join(f'{k}={v}' for k, v in params.items())
     url = f'{WATER_TEMPS_URL_BASE}?{param_str}'
     if path is None:
-        now = pendulum.now().format('YYYYMMDD_HHmmss')
-        filename = f'water_temps_{station_id}_{now}_{hours}h.json'
-        path = os.path.join(CACHE_DIR, filename)
-        _cleanup_paths.append(path)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    urlretrieve(url, path)
-    with open(path) as f:
-        data_dct = json.load(f)
+        # We only parse the response, so read it straight into memory.
+        with urlopen(url) as resp:
+            data_dct = json.load(resp)
+    else:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        urlretrieve(url, path)
+        with open(path) as f:
+            data_dct = json.load(f)
 
     station_info = Station(**data_dct['metadata'])
     water_temps = pd.DataFrame(data_dct['data']).set_index('t')['v']
@@ -75,7 +61,7 @@ def get_water_temps(
     return station_info, water_temps
 
 
-def plot_temps_file(water_temps: pd.Series, station: Station, path=None, keep=False):
+def plot_temps_file(water_temps: pd.Series, station: Station, path=None):
     start_dt = water_temps.index[0]
     end_dt = water_temps.index[-1]
     title_dt_fmt = '%H:%M:%S %m/%d/%Y'
@@ -84,35 +70,34 @@ def plot_temps_file(water_temps: pd.Series, station: Station, path=None, keep=Fa
     xtick_dt_fmt = DateTimeFormats.h_m_s
 
     if path is None:
-        now = pendulum.now().format('YYYYMMDD_HHmmss')
-        filename = f'water_temps_{station.id}_{now}.png'
-        path = os.path.join(CACHE_DIR, filename)
-        if not keep:
-            _cleanup_paths.append(path)
+        fd, path = tempfile.mkstemp(prefix=f'water_temps_{station.id}_', suffix='.png')
+        os.close(fd)
 
     sns.set_theme()
     plt.figure(figsize=(10, 4))
-    plt.plot(water_temps.rolling(10, center=True, win_type='boxcar').mean())
-    plt.gca().xaxis.set_major_formatter(DateFormatter(xtick_dt_fmt))
-    plt.xticks(rotation=45)
-    plt.ylabel(ylabel)
-    plt.title(title)
-    plt.savefig(path, bbox_inches='tight', pad_inches=0.25)
+    try:
+        plt.plot(water_temps.rolling(10, center=True, win_type='boxcar').mean())
+        plt.gca().xaxis.set_major_formatter(DateFormatter(xtick_dt_fmt))
+        plt.xticks(rotation=45)
+        plt.ylabel(ylabel)
+        plt.title(title)
+        plt.savefig(path, bbox_inches='tight', pad_inches=0.25)
+    finally:
+        plt.close()
 
     return path
 
 
 def post_water_temps(channel: str, station: Optional[str] = None) -> None:
     station, water_temps = get_water_temps(station_id=station)
-    plot_img_path = plot_temps_file(water_temps, station)
     observations_url = OBSERVATIONS_URL_TEMPLATE.format(id=station.id)
     post_txt = f"<{observations_url}|NOAA water temperature observations at {station.name} for the last 36 hours>\n"
-    post_file(plot_img_path, title="Water temperature", channel=channel, comment=post_txt)
-
-
-def _cleanup():
-    for path in _cleanup_paths:
-        os.remove(path)
+    # Keep the plot in a temp dir that's cleaned up only after the upload
+    # returns (success or failure), so the file can't vanish mid-upload.
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        plot_img_path = os.path.join(tmp_dir, f'water_temps_{station.id}.png')
+        plot_temps_file(water_temps, station, path=plot_img_path)
+        post_file(plot_img_path, title="Water temperature", channel=channel, comment=post_txt)
 
 
 """----------------------------------------------------------------------------
@@ -130,7 +115,6 @@ def parse_args():
 def main(args):
     station, water_temps = get_water_temps(station_id=args.station)
     post_water_temps(args.channel, station, water_temps)
-    _cleanup()
 
 
 if __name__ == '__main__':
