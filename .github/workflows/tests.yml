@@ -13,6 +13,12 @@ jobs:
   pytest:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.13 is what the daily job runs; 3.11 is the floor declared in
+        # pyproject, tested so the declared minimum stays honest.
+        python-version: ['3.11', '3.13']
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -20,8 +26,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          # Match the version the daily-conditions workflow runs on.
-          python-version: '3.11'
+          python-version: ${{ matrix.python-version }}
           cache: 'pip'
           cache-dependency-path: pyproject.toml
 

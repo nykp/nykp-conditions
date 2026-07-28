@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 
 import pytest
-import pytz
+from zoneinfo import ZoneInfo
 
 import notify_nyc as nn
 
@@ -16,8 +16,9 @@ def test_find_links_none_present():
 
 
 def test_alert_published_uses_real_eastern_offset():
-    # Regression: `.replace(tzinfo=pytz_zone)` gives New York's 1883 LMT offset
-    # (-4:56), not EDT. Only `localize()` picks the right offset for the date.
+    # Regression: this used to use pytz, where `.replace(tzinfo=zone)` gives
+    # New York's 1883 LMT offset (-4:56) rather than EDT. zoneinfo resolves the
+    # offset from the date, so the naive-datetime path is now correct by default.
     alert = nn.NotifyAlert(title='Waterbody Advisory', published='07/04/2026 12:00:00', summary='')
     assert alert.published.utcoffset() == timedelta(hours=-4)  # EDT
     assert alert.published.tzname() == 'EDT'
@@ -74,9 +75,9 @@ def test_get_waterbody_advisories_filters_by_window(fake_feed):
         _entry('Waterbody Advisory old', '07/01/2026 12:00:00'),
         _entry('Waterbody Advisory recent', '07/04/2026 12:00:00'),
     ])
-    tz = pytz.timezone('America/New_York')
-    start = tz.localize(datetime(2026, 7, 3))
-    end = tz.localize(datetime(2026, 7, 5))
+    tz = ZoneInfo('America/New_York')
+    start = datetime(2026, 7, 3, tzinfo=tz)
+    end = datetime(2026, 7, 5, tzinfo=tz)
     advisories = nn.get_waterbody_advisories(start_dt=start, end_dt=end)
     assert [a.title for a in advisories] == ['Waterbody Advisory recent']
 

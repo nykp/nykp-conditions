@@ -5,7 +5,6 @@ import os
 import tempfile
 from argparse import ArgumentParser
 from dataclasses import dataclass
-from typing import Optional, Tuple
 from urllib.request import urlopen, urlretrieve
 
 import matplotlib.pyplot as plt
@@ -31,8 +30,8 @@ class Station:
 
 
 def get_water_temps(
-        station_id: Optional[str] = None, hours: int = 36, units='english', path=None
-) -> Tuple[Station, pd.Series]:
+        station_id: str | None = None, hours: int = 36, units='english', path=None
+) -> tuple[Station, pd.Series]:
     """Fetch hourly water temperatures for a station over the last `hours`.
 
     Returns the station metadata and a time-indexed (UTC) temperature series.
@@ -95,7 +94,7 @@ def plot_temps_file(water_temps: pd.Series, station: Station, path=None) -> str:
     return path
 
 
-def post_water_temps(channel: str, station: Optional[str] = None) -> None:
+def post_water_temps(channel: str, station: str | None = None) -> None:
     """Post the water temperature plot for the last 36 hours to Slack."""
     station, water_temps = get_water_temps(station_id=station)
     observations_url = OBSERVATIONS_URL_TEMPLATE.format(id=station.id)

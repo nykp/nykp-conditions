@@ -7,8 +7,8 @@ formatted into a compact per-day summary for the daily Slack post.
 import os
 import tempfile
 from argparse import ArgumentParser
+from collections.abc import Sequence
 from dataclasses import dataclass, fields
-from typing import Optional, Sequence, Union
 from urllib.request import urlretrieve
 
 import pandas as pd
@@ -28,7 +28,7 @@ TWO_DAY_STRS = ('48h', '2d')
 class Station:
     name: str
     id: str
-    depth: Optional[str] = None
+    depth: str | None = None
 
     def __repr__(self):
         s = f"{self.name} ({self.id})"
@@ -49,7 +49,7 @@ default_nykp_station = StationLibrary.Hudson_River_Pier_92
 class CurrentsPredictions:
     table: pd.DataFrame
     link: str
-    plot_img_path: Optional[str] = None
+    plot_img_path: str | None = None
 
     def __repr__(self):
         lines = [
@@ -60,7 +60,7 @@ class CurrentsPredictions:
         return '\n'.join(lines)
 
 
-def _starts_with_one_of(s: str, candidates: Union[str, Sequence[str]], ignore_case=True) -> bool:
+def _starts_with_one_of(s: str, candidates: str | Sequence[str], ignore_case=True) -> bool:
     if isinstance(candidates, str):
         candidates = [candidates]
     if ignore_case:
@@ -69,7 +69,7 @@ def _starts_with_one_of(s: str, candidates: Union[str, Sequence[str]], ignore_ca
     return any([s.startswith(c) for c in candidates])
 
 
-def parse_time_period(r: Union[None, int, str]) -> int:
+def parse_time_period(r: int | str | None) -> int:
     """Normalize a time-period argument to the API's range code.
 
     Accepts the codes themselves (1 = 48 hours, 2 = weekly) or friendly
@@ -113,8 +113,8 @@ def currents_csv_url(station_id: str, date: pendulum.DateTime, time_period: int)
 
 
 def retrieve_currents_table(
-        station: Union[str, Station],
-        date: Union[str, pendulum.DateTime, None] = None,
+        station: str | Station,
+        date: str | pendulum.DateTime | None = None,
         time_period=None,
 ) -> CurrentsPredictions:
     """Download current predictions for a station and return the parsed table.
@@ -197,7 +197,7 @@ def format_currents_post(predictions: CurrentsPredictions, station: Station, day
     return '\n'.join([header] + blocks)
 
 
-def post_currents(channel: str, station: Optional[Station] = None, date=None, time_period=None, days=1) -> None:
+def post_currents(channel: str, station: Station | None = None, date=None, time_period=None, days=1) -> None:
     """Post current predictions for the next `days` days to Slack."""
     if station is None:
         station = default_nykp_station

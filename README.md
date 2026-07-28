@@ -44,6 +44,10 @@ back to `.secrets/slack_app_bot_token` (gitignored). Either works.
 
 ## Running locally
 
+Requires **Python 3.11+**; the scheduled job and local development both run on
+3.13. Timezone handling uses the stdlib `zoneinfo`, so there's no `pytz`
+dependency.
+
 > **Note:** the modules import each other flatly (`from utils.slack import …`),
 > so scripts must be run **from inside `nykp_conditions/`**. Running
 > `python nykp_conditions/post_conditions.py` from the repo root will fail on
@@ -87,8 +91,9 @@ no network access — HTTP calls, the Slack client, and the RSS feed are all
 stubbed. `tests/conftest.py` puts `nykp_conditions/` on `sys.path` so the tests
 import the modules the same flat way the scripts do.
 
-CI runs them on every push and pull request
-(`.github/workflows/tests.yml`).
+CI runs them on every push and pull request against Python 3.11 and 3.13
+(`.github/workflows/tests.yml`) — the floor declared in `pyproject.toml` and
+the version the daily job actually uses.
 
 ## Layout
 

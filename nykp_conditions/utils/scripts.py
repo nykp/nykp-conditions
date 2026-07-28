@@ -3,10 +3,10 @@
 import pdb
 import traceback
 from argparse import ArgumentParser
-from typing import Callable, Type, Union
+from collections.abc import Callable
 
 
-def str2bool(s: Union[bool, str, None], ignore_errors=False) -> Union[bool, str, None]:
+def str2bool(s: bool | str | None, ignore_errors=False) -> bool | str | None:
     """Parse a boolean from a CLI string ('true'/'no'/'1'/...).
 
     argparse's `type=bool` treats any non-empty string as True, so flags like
@@ -29,7 +29,7 @@ def str2bool(s: Union[bool, str, None], ignore_errors=False) -> Union[bool, str,
             raise
 
 
-def optional(type_: Type):
+def optional(type_: type):
     """argparse type that maps 'none'/'null' to None and otherwise converts."""
     def _converter(x):
         if x is None or x.lower() in ('none', 'null'):

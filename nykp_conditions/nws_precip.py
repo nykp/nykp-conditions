@@ -12,7 +12,6 @@ and aggregate to hourly and 6-hour totals.
 """
 
 from datetime import datetime, timezone
-from typing import Optional
 
 import pandas as pd
 
@@ -30,7 +29,7 @@ def get_observations_url(station: str, start_dt: datetime, end_dt: datetime) -> 
 
 def get_observed_precip(
         station: str = DEFAULT_STATION,
-        as_of: Optional[datetime] = None,
+        as_of: datetime | None = None,
         hours: int = 24,
 ) -> pd.Series:
     """Observed precipitation over the last `hours`. Not implemented yet."""
