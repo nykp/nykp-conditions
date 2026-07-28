@@ -1,3 +1,5 @@
+"""Shared CLI plumbing for the runnable modules."""
+
 import pdb
 import traceback
 from argparse import ArgumentParser
@@ -5,6 +7,11 @@ from typing import Callable, Type, Union
 
 
 def str2bool(s: Union[bool, str, None], ignore_errors=False) -> Union[bool, str, None]:
+    """Parse a boolean from a CLI string ('true'/'no'/'1'/...).
+
+    argparse's `type=bool` treats any non-empty string as True, so flags like
+    `--currents false` need this instead.
+    """
     try:
         if isinstance(s, bool) or s is None:
             return s
@@ -23,6 +30,7 @@ def str2bool(s: Union[bool, str, None], ignore_errors=False) -> Union[bool, str,
 
 
 def optional(type_: Type):
+    """argparse type that maps 'none'/'null' to None and otherwise converts."""
     def _converter(x):
         if x is None or x.lower() in ('none', 'null'):
             return None
@@ -32,6 +40,7 @@ def optional(type_: Type):
 
 
 def try_main(main: Callable, arg_parser: ArgumentParser):
+    """Parse args and run `main`, with optional pdb entry and post-mortem."""
     arg_parser.add_argument('--pdb', action='store_true')
     arg_parser.add_argument('--postmortem', action='store_true')
     args = arg_parser.parse_args()

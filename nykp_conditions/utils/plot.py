@@ -1,3 +1,5 @@
+"""Plotting helpers shared by the chart-producing sources."""
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
@@ -11,6 +13,7 @@ class DateTimeFormats:
 
 
 def format_time_axis(ax=None, fmt=DateTimeFormats.h_m_s, axis=0):
+    """Apply a datetime tick format to the x (0) or y (1) axis."""
     if ax is None:
         ax = plt.gca()
     if axis in (0, 'x', 'X'):
