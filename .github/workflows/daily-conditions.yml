@@ -1,10 +1,11 @@
 name: Post daily conditions to Slack
 
 on:
-  schedule:
-    # 12:30 UTC = 8:30am EDT / 7:30am EST. Runs every morning.
-    # Note: scheduled runs can be delayed by GitHub during peak times.
-    - cron: '30 12 * * *'
+  # Triggered externally by a cron-job.org job that POSTs to the workflow
+  # dispatch API at 8:30am America/New_York. GitHub's own `schedule:` trigger
+  # was dropped because it ran 2-3 hours late, well past the ~8am window when
+  # NotifyNYC posts waterbody advisories after heavy rain. The external
+  # trigger also tracks DST, which a UTC cron cannot.
   workflow_dispatch:
     inputs:
       channel:
