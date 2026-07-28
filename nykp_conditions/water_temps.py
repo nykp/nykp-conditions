@@ -113,8 +113,7 @@ def parse_args():
 
 
 def main(args):
-    station, water_temps = get_water_temps(station_id=args.station)
-    post_water_temps(args.channel, station, water_temps)
+    post_water_temps(args.channel, station=args.station)
 
 
 if __name__ == '__main__':
