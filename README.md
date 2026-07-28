@@ -14,7 +14,7 @@ posts them to `#hudson-conditions`.
 | Waterbody advisories (e.g. sewage discharge) | Notify NYC RSS feed | `notify_nyc.py` |
 | Water temperature, last 36 hours, with a plot | NOAA Tides & Currents | `water_temps.py` |
 | Forecast meteogram and text summary | forecast.weather.gov (scraped) | `nws_forecast.py` |
-| Observed precipitation | — | `nws_precip.py` (**not implemented**) |
+| Observed precipitation, last 24 hours, with a plot | api.weather.gov station observations | `nws_precip.py` |
 
 Each section posts independently. If one upstream source is down the others
 still go out; the run then fails at the end so the failure is visible in the
@@ -104,7 +104,7 @@ nykp_conditions/
   water_temps.py       Water temperature + plot
   nws_forecast.py      NWS meteogram + text forecast
   notify_nyc.py        Notify NYC waterbody advisories
-  nws_precip.py        Observed precipitation (not implemented)
+  nws_precip.py        Observed precipitation + plot
   utils/
     slack.py           Posting, retries on transient errors, channel lookup
     secrets.py         Token from env var or .secrets/
