@@ -4,11 +4,10 @@ from argparse import ArgumentParser
 
 from dataclasses import dataclass, fields
 from datetime import datetime, timedelta
-from typing import List, Union
+from zoneinfo import ZoneInfo
 
 import feedparser
 import pendulum
-import pytz
 
 from utils.scripts import try_main
 from utils.slack import NykpSlackChannels, post_text_attachment
@@ -18,10 +17,10 @@ NOTIFY_NYC_URL = 'https://a858-nycnotify.nyc.gov/RSS/NotifyNYC?lang=en'
 WATERBODY_ADVISORY = 'Waterbody Advisory'
 ALERTS_FIELD = 'entries'
 NOTIFY_DATE_FMT = '%m/%d/%Y %H:%M:%S'
-NOTIFY_NYC_TZ = pytz.timezone('America/New_York')
+NOTIFY_NYC_TZ = ZoneInfo('America/New_York')
 
 
-def find_links(s: str) -> List[str]:
+def find_links(s: str) -> list[str]:
     """Pull bare http(s) URLs out of an advisory summary."""
     return [i for i in s.split() if i.startswith('http://') or i.startswith('https://')]
 
@@ -35,15 +34,12 @@ class NotifyAlert:
     def __post_init__(self):
         if isinstance(self.published, str):
             try:
-                naive = datetime.strptime(self.published, NOTIFY_DATE_FMT)
+                self.published = datetime.strptime(self.published, NOTIFY_DATE_FMT)
             except ValueError:
                 self.published = pendulum.parse(self.published)
-            else:
-                # localize(), not replace(tzinfo=...): pytz zones default to
-                # their LMT offset (-4:56 for New York) until localized.
-                self.published = NOTIFY_NYC_TZ.localize(naive)
+        # Feed timestamps are local to NYC and carry no offset.
         if self.published is not None and self.published.tzinfo is None:
-            self.published = NOTIFY_NYC_TZ.localize(self.published)
+            self.published = self.published.replace(tzinfo=NOTIFY_NYC_TZ)
 
     @classmethod
     def parse(cls, entry: dict) -> 'NotifyAlert':
@@ -53,18 +49,18 @@ class NotifyAlert:
         return cls(**kws)
 
 
-def _as_aware(dt: Union[datetime, None]) -> Union[datetime, None]:
+def _as_aware(dt: datetime | None) -> datetime | None:
     """Attach the Notify NYC timezone to a naive datetime so comparisons work."""
     if dt is not None and dt.tzinfo is None:
-        return NOTIFY_NYC_TZ.localize(dt)
+        return dt.replace(tzinfo=NOTIFY_NYC_TZ)
     return dt
 
 
 def get_waterbody_advisories(
-        start_dt: Union[datetime, None] = None,
-        end_dt: Union[datetime, None] = None,
+        start_dt: datetime | None = None,
+        end_dt: datetime | None = None,
         url: str = NOTIFY_NYC_URL,
-) -> List[NotifyAlert]:
+) -> list[NotifyAlert]:
     """Fetch the Notify NYC feed and return waterbody advisories in the window."""
     start_dt = _as_aware(start_dt)
     end_dt = _as_aware(end_dt)
@@ -85,15 +81,15 @@ def get_waterbody_advisories(
 
 def post_waterbody_advisories(
         channel: str,
-        start_time: Union[datetime, str, None] = None,
-        end_time: Union[datetime, str, None] = None,
+        start_time: datetime | str | None = None,
+        end_time: datetime | str | None = None,
         days=1
 ):
     """Post each waterbody advisory from the last `days` days to Slack."""
     if isinstance(end_time, str):
         end_time = pendulum.parse(end_time)
     elif end_time is None:
-        end_time = datetime.now(tz=pytz.timezone('America/New_York'))
+        end_time = datetime.now(tz=NOTIFY_NYC_TZ)
 
     if isinstance(start_time, str):
         start_time = pendulum.parse(start_time)

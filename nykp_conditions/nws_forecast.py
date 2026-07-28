@@ -8,15 +8,14 @@ and the text forecast is the first two periods of the tabular text page.
 import os
 import tempfile
 from argparse import ArgumentParser
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Iterator, Optional, Tuple, Union
+from datetime import datetime, timezone
 from urllib.parse import urljoin
 from urllib.request import urlopen, urlretrieve
 
 from bs4 import BeautifulSoup, Tag
-import pytz
 
 from utils.geo import LatLon
 from utils.scripts import try_main
@@ -26,7 +25,7 @@ URL_BASE = 'https://forecast.weather.gov/'
 DEFAULT_LAT_LON = LatLon(40.7143, -74.006)
 CACHE_DIR = 'cache'
 IMG_FILENAME_TEMPLATE = 'nws_forecast_{lat}_{lon}_{ts}.png'
-_LatLonType = Union[LatLon, Tuple[float, float]]
+_LatLonType = LatLon | tuple[float, float]
 
 
 def _as_lat_lon(lat_lon: _LatLonType) -> LatLon:
@@ -59,17 +58,17 @@ def find_forecast_img_url(lat_lon: _LatLonType = DEFAULT_LAT_LON) -> str:
     return urljoin(URL_BASE, filtered_tags[0]['src'])
 
 
-def forecast_img_filename(lat_lon: _LatLonType = DEFAULT_LAT_LON, now: Optional[datetime] = None) -> str:
+def forecast_img_filename(lat_lon: _LatLonType = DEFAULT_LAT_LON, now: datetime | None = None) -> str:
     """Timestamped filename for a forecast image at this location."""
     lat_lon = _as_lat_lon(lat_lon)
     if now is None:
-        now = datetime.now(tz=pytz.UTC)
+        now = datetime.now(tz=timezone.utc)
     return IMG_FILENAME_TEMPLATE.format(
         lat=lat_lon.latitude, lon=lat_lon.longitude, ts=now.strftime('%Y%m%dT%H%M%S')
     )
 
 
-def save_forecast_plot(lat_lon: _LatLonType = DEFAULT_LAT_LON, path: Optional[str] = None) -> str:
+def save_forecast_plot(lat_lon: _LatLonType = DEFAULT_LAT_LON, path: str | None = None) -> str:
     """Download the meteogram image, returning the path it was written to.
 
     With no `path`, writes to a temp file the caller is responsible for

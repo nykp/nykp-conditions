@@ -11,7 +11,7 @@ nonzero exit so the workflow run still shows as failed.
 import sys
 import traceback
 from argparse import ArgumentParser
-from typing import Callable, List, Tuple
+from collections.abc import Callable
 
 from noaa_currents import post_currents
 from notify_nyc import post_waterbody_advisories
@@ -38,7 +38,7 @@ def _add_config_fields(parser: ArgumentParser):
     return parser
 
 
-def post_sections(sections: List[Tuple[str, Callable[[], None]]]) -> List[str]:
+def post_sections(sections: list[tuple[str, Callable[[], None]]]) -> list[str]:
     """Run each (name, post-callable) in order, returning the names that failed.
 
     Errors are printed with a traceback rather than raised, so a failure in one

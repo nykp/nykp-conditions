@@ -2,7 +2,7 @@ name: Post daily conditions to Slack
 
 on:
   schedule:
-    # 12:30 UTC = 9am EDT / 8am EST. Runs every morning.
+    # 12:30 UTC = 8:30am EDT / 7:30am EST. Runs every morning.
     # Note: scheduled runs can be delayed by GitHub during peak times.
     - cron: '30 12 * * *'
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.13'
           cache: 'pip'
           cache-dependency-path: pyproject.toml
 

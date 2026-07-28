@@ -1,5 +1,5 @@
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import slack_sdk
 from slack_sdk.errors import SlackApiError
@@ -67,7 +67,7 @@ def get_channel_id(client: slack_sdk.WebClient, name: str, page_limit: int = 200
             raise ValueError(f"No Slack channel named {name!r} visible to this token")
 
 
-def post_message(text: Optional[str], channel=NykpSlackChannels.test_python_api, client=None, token=None, **kwargs):
+def post_message(text: str | None, channel=NykpSlackChannels.test_python_api, client=None, token=None, **kwargs):
     """Post a plain text message to a channel."""
     try:
         if client is None:
@@ -85,7 +85,7 @@ def post_message(text: Optional[str], channel=NykpSlackChannels.test_python_api,
 
 
 def post_text_attachment(
-        text: str, pretext: Optional[str] = None, channel=NykpSlackChannels.test_python_api, client=None,
+        text: str, pretext: str | None = None, channel=NykpSlackChannels.test_python_api, client=None,
         token=None, **kwargs
 ):
     """Post a message with the body in an attachment below bolded pretext."""

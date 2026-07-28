@@ -1,9 +1,8 @@
 import io
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
-import pytz
 from bs4 import BeautifulSoup
 
 import nws_forecast as nf
@@ -95,7 +94,7 @@ def test_parse_forecast_text_raises_on_unexpected_layout():
 
 
 def test_forecast_img_filename_is_timestamped():
-    now = datetime(2026, 7, 27, 12, 30, 0, tzinfo=pytz.UTC)
+    now = datetime(2026, 7, 27, 12, 30, 0, tzinfo=timezone.utc)
     name = nf.forecast_img_filename(LatLon(40.7143, -74.006), now=now)
     assert name == 'nws_forecast_40.7143_-74.006_20260727T123000.png'
 

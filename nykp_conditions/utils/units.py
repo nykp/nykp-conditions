@@ -1,13 +1,11 @@
 """Unit conversions."""
 
-from typing import Optional
-
 import numpy as np
 
 KNOTS_TO_MPH = 1.15078
 
 
-def knots_to_mph(knots) -> Optional[float]:
+def knots_to_mph(knots) -> float | None:
     """Convert knots to mph, returning NaN for values that aren't numeric.
 
     NOAA CSVs use blank cells for missing readings, so unparseable values
