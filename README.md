@@ -13,7 +13,7 @@ Listed in the order they're posted:
 | Section | Source | Module |
 | --- | --- | --- |
 | Tidal current predictions (slack / max flood / max ebb) | NOAA Tides & Currents | `noaa_currents.py` |
-| Water temperature, last 36 hours, with a plot | NOAA Tides & Currents | `water_temps.py` |
+| Water temperature range (low/high and when), last 36 hours | NOAA Tides & Currents | `water_temps.py` |
 | Forecast meteogram and text summary | forecast.weather.gov (scraped) | `nws_forecast.py` |
 | Observed precipitation, last 24 hours, with a plot | api.weather.gov station observations | `nws_precip.py` |
 | Waterbody advisories (e.g. sewage discharge) | Notify NYC RSS feed | `notify_nyc.py` |
@@ -93,6 +93,9 @@ python post_conditions.py --channel hudson-conditions --days 2
 
 # Skip sections you don't want while iterating
 python post_conditions.py --currents false --forecast false
+
+# Attach the water temperature timeseries plot (off by default)
+python post_conditions.py --water-temp-plot true
 ```
 
 Each source module is also runnable on its own:
@@ -100,7 +103,7 @@ Each source module is also runnable on its own:
 ```bash
 cd nykp_conditions
 python noaa_currents.py --station NYH1928_12 --range 1w
-python water_temps.py --channel test-python-api
+python water_temps.py --channel test-python-api --plot true
 python nws_forecast.py --keep          # Leaves the downloaded plot in cache/
 python nws_precip.py --station KNYC --hours 24
 python notify_nyc.py --days 7
@@ -130,7 +133,7 @@ the version the daily job actually uses.
 nykp_conditions/
   post_conditions.py   Entry point for the daily post
   noaa_currents.py     Tidal current predictions
-  water_temps.py       Water temperature + plot
+  water_temps.py       Water temperature range (plot optional)
   nws_forecast.py      NWS meteogram + text forecast
   notify_nyc.py        Notify NYC waterbody advisories
   nws_precip.py        Observed precipitation + plot

@@ -43,7 +43,7 @@ def test_main_raises_when_a_section_fails(monkeypatch):
     monkeypatch.setattr(pc, 'post_currents', lambda channel, days: (_ for _ in ()).throw(RuntimeError('down')))
     monkeypatch.setattr(pc, 'post_waterbody_advisories', lambda channel, days: None)
     monkeypatch.setattr(pc, 'post_observed_precip', lambda channel: None)
-    monkeypatch.setattr(pc, 'post_water_temps', lambda channel: None)
+    monkeypatch.setattr(pc, 'post_water_temps', lambda channel, plot: None)
     monkeypatch.setattr(pc, 'post_forecast', lambda channel: None)
 
     args = pc.parse_args().parse_args(['--channel', 'test-channel'])
@@ -56,7 +56,7 @@ def test_main_succeeds_when_all_sections_post(monkeypatch):
     monkeypatch.setattr(pc, 'post_currents', lambda channel, days: posted.append('currents'))
     monkeypatch.setattr(pc, 'post_waterbody_advisories', lambda channel, days: posted.append('advisories'))
     monkeypatch.setattr(pc, 'post_observed_precip', lambda channel: posted.append('precip'))
-    monkeypatch.setattr(pc, 'post_water_temps', lambda channel: posted.append('water-temp'))
+    monkeypatch.setattr(pc, 'post_water_temps', lambda channel, plot: posted.append('water-temp'))
     monkeypatch.setattr(pc, 'post_forecast', lambda channel: posted.append('forecast'))
 
     args = pc.parse_args().parse_args(['--channel', 'test-channel'])
@@ -72,9 +72,20 @@ def test_sections_can_be_disabled(monkeypatch):
     monkeypatch.setattr(pc, 'post_currents', lambda channel, days: posted.append('currents'))
     monkeypatch.setattr(pc, 'post_waterbody_advisories', lambda channel, days: posted.append('advisories'))
     monkeypatch.setattr(pc, 'post_observed_precip', lambda channel: posted.append('precip'))
-    monkeypatch.setattr(pc, 'post_water_temps', lambda channel: posted.append('water-temp'))
+    monkeypatch.setattr(pc, 'post_water_temps', lambda channel, plot: posted.append('water-temp'))
     monkeypatch.setattr(pc, 'post_forecast', lambda channel: posted.append('forecast'))
 
     args = pc.parse_args().parse_args(['--currents', 'false', '--forecast', 'no', '--precip', '0'])
     pc.main(args)
     assert sorted(posted) == sorted(['advisories', 'water-temp'])
+
+
+@pytest.mark.parametrize('argv, expected', [([], False), (['--water-temp-plot', 'true'], True)])
+def test_water_temp_plot_is_opt_in(monkeypatch, argv, expected):
+    plotted = []
+    monkeypatch.setattr(pc, 'post_water_temps', lambda channel, plot: plotted.append(plot))
+    for name in ('post_currents', 'post_waterbody_advisories', 'post_observed_precip', 'post_forecast'):
+        monkeypatch.setattr(pc, name, lambda *a, **kw: None)
+
+    pc.main(pc.parse_args().parse_args(argv))
+    assert plotted == [expected]

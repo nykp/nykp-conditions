@@ -36,6 +36,7 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.dates import DateFormatter
 
+from utils.format import format_hour
 from utils.scripts import try_main
 from utils.slack import NykpSlackChannels, post_file, post_message
 
@@ -204,7 +205,7 @@ def plot_precip_file(precip: ObservedPrecip, path: str | None = None) -> str:
 
     hourly_in = precip.hourly / MM_PER_INCH
     title = (f'Precipitation at {precip.station_name}, '
-             f'{_format_hour(precip.start)} - {_format_hour(precip.end)}')
+             f'{format_hour(precip.start)} - {format_hour(precip.end)}')
 
     sns.set_theme()
     fig, ax = plt.subplots(figsize=(10, 4))
@@ -226,14 +227,9 @@ def plot_precip_file(precip: ObservedPrecip, path: str | None = None) -> str:
     return path
 
 
-def _format_hour(when: datetime) -> str:
-    """Render an hour as '8am Mon' -- lowercase meridiem, capitalized weekday."""
-    return f"{when.strftime('%-I')}{when.strftime('%p').lower()} {when.strftime('%a')}"
-
-
 def format_precip_post(precip: ObservedPrecip) -> str:
     """Build the Slack message body for the observed precipitation."""
-    window = f"{_format_hour(precip.start)} - {_format_hour(precip.end)}"
+    window = f"{format_hour(precip.start)} - {format_hour(precip.end)}"
     header = (f"<{precip.link}|Recent precipitation measured at {precip.station_name} "
               f"({precip.station})>, {window}")
     if precip.total_mm == 0:
@@ -241,7 +237,7 @@ def format_precip_post(precip: ObservedPrecip) -> str:
 
     lines = [header, f"*{precip.total_inches:.2f} in* ({precip.total_mm:.1f} mm) total"]
     wettest = precip.hourly.idxmax()
-    lines.append(f"Wettest hour: {_format_hour(wettest)} "
+    lines.append(f"Wettest hour: {format_hour(wettest)} "
                  f"({precip.hourly.max() / MM_PER_INCH:.2f} in)")
     if precip.missing_hours:
         lines.append(f"_{precip.missing_hours} hour(s) had no observation and are not counted._")

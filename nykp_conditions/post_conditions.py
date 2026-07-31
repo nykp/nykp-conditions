@@ -59,6 +59,8 @@ def parse_args() -> ArgumentParser:
     parser = ArgumentParser(description=__doc__)
     parser.add_argument('--channel', type=str, default=None)
     parser.add_argument('--days', type=int, default=1)
+    parser.add_argument('--water-temp-plot', type=str2bool, default=False,
+                        help='Attach the water temperature timeseries plot (default: False)')
     parser = _add_config_fields(parser)
     return parser
 
@@ -70,7 +72,7 @@ def main(args):
     if args.currents:
         sections.append(('currents', lambda: post_currents(channel, days=args.days)))
     if args.water_temp:
-        sections.append(('water temperature', lambda: post_water_temps(channel)))
+        sections.append(('water temperature', lambda: post_water_temps(channel, plot=args.water_temp_plot)))
     if args.forecast:
         sections.append(('forecast', lambda: post_forecast(channel)))
     if args.precip:
