@@ -13,6 +13,7 @@ import traceback
 from argparse import ArgumentParser
 from collections.abc import Callable
 
+from dep_advisory import post_waterbody_advisory
 from noaa_currents import post_currents
 from notify_nyc import post_waterbody_advisories
 from nws_forecast import post_forecast
@@ -25,6 +26,7 @@ from water_temps import post_water_temps
 default_config = {
     'currents': True,
     'advisories': True,
+    'dep-advisory': True,
     'precip': True,
     'water-temp': True,
     'forecast': True,
@@ -61,6 +63,8 @@ def parse_args() -> ArgumentParser:
     parser.add_argument('--days', type=int, default=1)
     parser.add_argument('--water-temp-plot', type=str2bool, default=False,
                         help='Attach the water temperature timeseries plot (default: False)')
+    parser.add_argument('--dep-rainfall', type=str2bool, default=False,
+                        help='Attach the DEP gauge rainfall chart to the advisory (default: False)')
     parser = _add_config_fields(parser)
     return parser
 
@@ -79,6 +83,9 @@ def main(args):
         sections.append(('precip', lambda: post_observed_precip(channel)))
     if args.advisories:
         sections.append(('advisories', lambda: post_waterbody_advisories(channel, days=args.days)))
+    if args.dep_advisory:
+        sections.append(('DEP advisory',
+                         lambda: post_waterbody_advisory(channel, plot_rainfall=args.dep_rainfall)))
 
     failed = post_sections(sections)
     if failed:
