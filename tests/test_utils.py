@@ -2,9 +2,17 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from argparse import ArgumentParser
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib.dates import DateFormatter
+
 from utils import secrets
 from utils.data import rename_cols
-from utils.scripts import optional, str2bool
+from utils.plot import DateTimeFormats, format_time_axis
+from utils.scripts import optional, str2bool, try_main
 from utils.units import knots_to_mph
 
 
@@ -85,3 +93,111 @@ def test_get_token_error_names_both_sources(monkeypatch, tmp_path):
     missing = str(tmp_path / 'nope')
     with pytest.raises(RuntimeError, match=r'set \$TEST_TOKEN'):
         secrets._get_token('TEST_TOKEN', missing)
+
+
+# ---------------------------------------------------------------- utils.plot
+
+@pytest.fixture
+def ax():
+    fig, ax = plt.subplots()
+    yield ax
+    plt.close(fig)
+
+
+@pytest.mark.parametrize('axis', [0, 'x', 'X'])
+def test_format_time_axis_targets_x(ax, axis):
+    format_time_axis(ax, fmt=DateTimeFormats.y_m_d, axis=axis)
+    assert isinstance(ax.xaxis.get_major_formatter(), DateFormatter)
+    assert not isinstance(ax.yaxis.get_major_formatter(), DateFormatter)
+
+
+@pytest.mark.parametrize('axis', [1, 'y', 'Y'])
+def test_format_time_axis_targets_y(ax, axis):
+    format_time_axis(ax, fmt=DateTimeFormats.y_m_d, axis=axis)
+    assert isinstance(ax.yaxis.get_major_formatter(), DateFormatter)
+    assert not isinstance(ax.xaxis.get_major_formatter(), DateFormatter)
+
+
+def test_format_time_axis_rejects_unknown_axis(ax):
+    with pytest.raises(ValueError, match='Unrecognized axis'):
+        format_time_axis(ax, axis='z')
+
+
+def test_format_time_axis_defaults_to_current_axes():
+    fig, ax = plt.subplots()
+    try:
+        plt.sca(ax)
+        format_time_axis(fmt=DateTimeFormats.y)
+        assert isinstance(ax.xaxis.get_major_formatter(), DateFormatter)
+    finally:
+        plt.close(fig)
+
+
+def test_format_time_axis_applies_the_requested_format(ax):
+    format_time_axis(ax, fmt=DateTimeFormats.y_m)
+    formatted = ax.xaxis.get_major_formatter()(
+        matplotlib.dates.date2num(pd.Timestamp('2026-08-21 13:45:00'))
+    )
+    assert formatted == '2026-08'
+
+
+# ------------------------------------------------------------- utils.scripts
+
+def _parser():
+    return ArgumentParser()
+
+
+def test_try_main_runs_main_with_parsed_args(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['prog'])
+    seen = []
+    try_main(lambda args: seen.append(args), _parser())
+    assert len(seen) == 1
+
+
+def test_try_main_reraises_without_postmortem(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['prog'])
+
+    def boom(args):
+        raise RuntimeError('upstream is down')
+
+    with pytest.raises(RuntimeError, match='upstream is down'):
+        try_main(boom, _parser())
+
+
+def test_try_main_swallows_keyboard_interrupt(monkeypatch):
+    # A Ctrl-C at the terminal shouldn't print a traceback.
+    monkeypatch.setattr('sys.argv', ['prog'])
+
+    def interrupted(args):
+        raise KeyboardInterrupt
+
+    try_main(interrupted, _parser())  # Does not raise
+
+
+def test_try_main_enters_postmortem_on_failure(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['prog', '--postmortem'])
+    entered = []
+    monkeypatch.setattr('pdb.post_mortem', lambda: entered.append(True))
+
+    def boom(args):
+        raise RuntimeError('down')
+
+    try_main(boom, _parser())  # Swallowed, having been handed to pdb
+    assert entered == [True]
+
+
+def test_try_main_breaks_on_entry_with_pdb(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['prog', '--pdb'])
+    traced = []
+    monkeypatch.setattr('pdb.set_trace', lambda: traced.append(True))
+    try_main(lambda args: None, _parser())
+    assert traced == [True]
+
+
+def test_try_main_keeps_the_parsers_own_arguments(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['prog', '--channel', 'test-python-api'])
+    parser = _parser()
+    parser.add_argument('--channel')
+    seen = []
+    try_main(lambda args: seen.append(args.channel), parser)
+    assert seen == ['test-python-api']

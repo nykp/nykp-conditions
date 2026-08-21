@@ -141,3 +141,85 @@ def test_post_file_returns_the_single_file():
     file = slack.post_file('/tmp/map.png', title='Map', channel='hudson-conditions',
                            client=client)
     assert file['title'] == 'Map'
+
+
+class FakeMessageClient:
+    """Records chat_postMessage calls."""
+
+    def __init__(self, error=None):
+        self.calls = []
+        self.error = error
+
+    def chat_postMessage(self, **kwargs):
+        if self.error:
+            raise _api_error(self.error)
+        self.calls.append(kwargs)
+        return FakeResponse(ok=True, ts='1787319706.147309')
+
+
+def test_post_message_sends_text_and_channel():
+    client = FakeMessageClient()
+    slack.post_message('hello', channel='hudson-conditions', client=client)
+    assert client.calls == [{'channel': 'hudson-conditions', 'text': 'hello'}]
+
+
+def test_post_message_passes_extra_kwargs_through():
+    client = FakeMessageClient()
+    slack.post_message('hi', channel='c', client=client, unfurl_links=False)
+    assert client.calls[0]['unfurl_links'] is False
+
+
+def test_post_message_reraises_after_reporting(capsys):
+    client = FakeMessageClient(error='channel_not_found')
+    with pytest.raises(SlackApiError):
+        slack.post_message('hi', channel='nope', client=client)
+    assert 'channel_not_found' in capsys.readouterr().out
+
+
+def test_post_message_retries_transient_errors():
+    # post_message routes through _with_retries, so a transient failure on the
+    # first attempt shouldn't lose the message.
+    attempts = []
+
+    class Flaky(FakeMessageClient):
+        def chat_postMessage(self, **kwargs):
+            attempts.append(kwargs)
+            if len(attempts) == 1:
+                raise _api_error('internal_error')
+            return FakeResponse(ok=True)
+
+    slack.post_message('hi', channel='c', client=Flaky())
+    assert len(attempts) == 2
+
+
+def test_post_text_attachment_bolds_the_pretext():
+    client = FakeMessageClient()
+    slack.post_text_attachment('the body', pretext='Waterbody Advisory',
+                               channel='c', client=client)
+    call = client.calls[0]
+    assert call['text'] == '*Waterbody Advisory*'
+    assert call['attachments'][0].text == 'the body'
+
+
+def test_post_text_attachment_keeps_body_out_of_the_top_level_text():
+    client = FakeMessageClient()
+    slack.post_text_attachment('the body', pretext='head', channel='c', client=client)
+    assert 'the body' not in client.calls[0]['text']
+
+
+def test_get_client_uses_the_bot_token_by_default(monkeypatch):
+    monkeypatch.setattr(slack, 'get_slack_bot_token', lambda: 'xoxb-test')
+    monkeypatch.setattr(slack, 'get_slack_user_token',
+                        lambda: pytest.fail('should not need the user token'))
+    assert slack.get_client().token == 'xoxb-test'
+
+
+def test_get_client_can_ask_for_the_user_token(monkeypatch):
+    monkeypatch.setattr(slack, 'get_slack_user_token', lambda: 'xoxp-test')
+    assert slack.get_client(user=True).token == 'xoxp-test'
+
+
+def test_get_client_prefers_an_explicit_token(monkeypatch):
+    monkeypatch.setattr(slack, 'get_slack_bot_token',
+                        lambda: pytest.fail('should not look up a token'))
+    assert slack.get_client(token='xoxb-explicit').token == 'xoxb-explicit'

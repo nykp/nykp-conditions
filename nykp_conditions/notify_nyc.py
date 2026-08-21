@@ -20,6 +20,11 @@ NOTIFY_DATE_FMT = '%m/%d/%Y %H:%M:%S'
 NOTIFY_NYC_TZ = ZoneInfo('America/New_York')
 
 
+def _parse_local(s: str) -> datetime:
+    """Parse a timestamp, reading it as NYC-local unless it carries an offset."""
+    return pendulum.parse(s, strict=False, tz=NOTIFY_NYC_TZ)
+
+
 def find_links(s: str) -> list[str]:
     """Pull bare http(s) URLs out of an advisory summary."""
     return [i for i in s.split() if i.startswith('http://') or i.startswith('https://')]
@@ -36,16 +41,24 @@ class NotifyAlert:
             try:
                 self.published = datetime.strptime(self.published, NOTIFY_DATE_FMT)
             except ValueError:
-                self.published = pendulum.parse(self.published, strict=False)
+                # pendulum assumes UTC for a naive string unless given a tz,
+                # which would read these NYC-local stamps four hours early.
+                self.published = _parse_local(self.published)
         # Feed timestamps are local to NYC and carry no offset.
         if self.published is not None and self.published.tzinfo is None:
             self.published = self.published.replace(tzinfo=NOTIFY_NYC_TZ)
 
     @classmethod
     def parse(cls, entry: dict) -> 'NotifyAlert':
-        """Build an alert from a feedparser entry, ignoring extra fields."""
-        field_names = [f.name for f in fields(cls)]
-        kws = {field: entry.get(field) for field in field_names}
+        """Build an alert from a feedparser entry, ignoring extra fields.
+
+        Missing text comes back as '' rather than None. The feed carries every
+        NYC alert, so one malformed entry of any kind -- a traffic notice, say --
+        used to take down the whole waterbody section.
+        """
+        kws = {f.name: entry.get(f.name) for f in fields(cls)}
+        for field in ('title', 'summary'):
+            kws[field] = kws[field] or ''
         return cls(**kws)
 
 
@@ -68,6 +81,9 @@ def get_waterbody_advisories(
     def f(alert: NotifyAlert) -> bool:
         if WATERBODY_ADVISORY not in alert.title:
             return False
+        if alert.published is None:
+            # Undateable, so it can't be placed in a requested window.
+            return not (start_dt or end_dt)
         if start_dt and alert.published < start_dt:
             return False
         if end_dt and alert.published > end_dt:
@@ -87,12 +103,12 @@ def post_waterbody_advisories(
 ):
     """Post each waterbody advisory from the last `days` days to Slack."""
     if isinstance(end_time, str):
-        end_time = pendulum.parse(end_time, strict=False)
+        end_time = _parse_local(end_time)
     elif end_time is None:
         end_time = datetime.now(tz=NOTIFY_NYC_TZ)
 
     if isinstance(start_time, str):
-        start_time = pendulum.parse(start_time, strict=False)
+        start_time = _parse_local(start_time)
     elif start_time is None:
         start_time = end_time - timedelta(days=days)
 

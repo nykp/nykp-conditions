@@ -160,3 +160,50 @@ def test_post_forecast_keep_writes_to_cache_dir(tmp_path, monkeypatch):
     kept = list((tmp_path / nf.CACHE_DIR).iterdir())
     assert len(kept) == 1
     assert kept[0].name.startswith('nws_forecast_')
+
+
+def test_get_forecast_text_requests_the_locations_page(monkeypatch):
+    urls = []
+
+    def fake_urlopen(url):
+        urls.append(url)
+        return io.StringIO(TEXT_PAGE)
+
+    monkeypatch.setattr(nf, 'urlopen', fake_urlopen)
+    forecast = nf.get_forecast_text(nf.LatLon(40.7143, -74.006))
+
+    assert 'lat=40.7143' in urls[0] and 'lon=-74.006' in urls[0]
+    assert 'FcstType=text' in urls[0]
+    assert forecast.title == 'New York, NY, 40.71N 74.01W'
+
+
+def test_get_forecast_text_accepts_a_tuple(monkeypatch):
+    _stub_urlopen(monkeypatch, TEXT_PAGE)
+    assert nf.get_forecast_text((40.7143, -74.006)).forecast.startswith('Today')
+
+
+def test_save_forecast_plot_uses_a_temp_file_without_a_path(monkeypatch):
+    monkeypatch.setattr(nf, 'find_forecast_img_url', lambda lat_lon: 'http://x/plot.png')
+    written = []
+
+    def fake_urlretrieve(url, path):
+        written.append(path)
+        with open(path, 'wb') as f:
+            f.write(b'\x89PNG')
+        return path, {}
+
+    monkeypatch.setattr(nf, 'urlretrieve', fake_urlretrieve)
+    path = nf.save_forecast_plot()
+    try:
+        assert path == written[0]
+        assert os.path.basename(path).startswith('nws_forecast_')
+        assert os.path.getsize(path) > 0
+    finally:
+        os.unlink(path)
+
+
+def test_parse_forecast_text_raises_when_no_periods_are_present():
+    page = ('<html><body><table><tr><td>New York</td><td>a</td><td>b</td>'
+            '<td>40.71N 74.01W</td></tr></table><table></table></body></html>')
+    with pytest.raises(RuntimeError, match='No forecast periods'):
+        nf.parse_forecast_text(BeautifulSoup(page, 'html.parser'))
