@@ -13,7 +13,7 @@ from utils.scripts import try_main
 from utils.slack import NykpSlackChannels, post_text_attachment
 
 
-NOTIFY_NYC_URL = 'https://a858-nycnotify.nyc.gov/RSS/NotifyNYC?lang=en'
+NOTIFY_NYC_URL = 'https://feeds.everbridge.net/feeds/453003085617722/rss/rss.xml'
 WATERBODY_ADVISORY = 'Waterbody Advisory'
 ALERTS_FIELD = 'entries'
 NOTIFY_DATE_FMT = '%m/%d/%Y %H:%M:%S'
@@ -36,7 +36,7 @@ class NotifyAlert:
             try:
                 self.published = datetime.strptime(self.published, NOTIFY_DATE_FMT)
             except ValueError:
-                self.published = pendulum.parse(self.published)
+                self.published = pendulum.parse(self.published, strict=False)
         # Feed timestamps are local to NYC and carry no offset.
         if self.published is not None and self.published.tzinfo is None:
             self.published = self.published.replace(tzinfo=NOTIFY_NYC_TZ)
@@ -87,12 +87,12 @@ def post_waterbody_advisories(
 ):
     """Post each waterbody advisory from the last `days` days to Slack."""
     if isinstance(end_time, str):
-        end_time = pendulum.parse(end_time)
+        end_time = pendulum.parse(end_time, strict=False)
     elif end_time is None:
         end_time = datetime.now(tz=NOTIFY_NYC_TZ)
 
     if isinstance(start_time, str):
-        start_time = pendulum.parse(start_time)
+        start_time = pendulum.parse(start_time, strict=False)
     elif start_time is None:
         start_time = end_time - timedelta(days=days)
 
