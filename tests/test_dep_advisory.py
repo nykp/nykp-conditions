@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 import numpy as np
+import pandas as pd
 import pytest
 from zoneinfo import ZoneInfo
 
@@ -168,7 +169,7 @@ def test_post_stays_quiet_when_there_is_no_advisory(fake_api, monkeypatch):
     fake_api({'/advisory': [_record('Hudson River (Manhattan)', 0.0)]})
     posted = []
     monkeypatch.setattr(dep, 'post_message', lambda *a, **k: posted.append(a))
-    monkeypatch.setattr(dep, 'post_file', lambda *a, **k: posted.append(a))
+    monkeypatch.setattr(dep, 'post_files', lambda *a, **k: posted.append(a))
     dep.post_waterbody_advisory('test-channel')
     assert posted == []
 
@@ -181,23 +182,105 @@ def test_post_when_clear_flag_posts_text(fake_api, monkeypatch):
     assert len(posted) == 1 and 'No advisory.' in posted[0]
 
 
-def test_post_uploads_the_map_when_active(fake_api, monkeypatch):
+@pytest.fixture
+def capture_uploads(monkeypatch):
+    """Record what a post would upload, without touching Slack."""
+    captured = {}
+
+    def post_files(uploads, **kwargs):
+        captured['paths'] = [path for path, _ in uploads]
+        captured['titles'] = [title for _, title in uploads]
+        captured['comment'] = kwargs['comment']
+
+    monkeypatch.setattr(dep, 'post_files', post_files)
+    monkeypatch.setattr(dep, 'post_message',
+                        lambda *a, **k: pytest.fail('should have uploaded files'))
+    return captured
+
+
+def test_post_uploads_the_map_when_active(fake_api, capture_uploads):
     fake_api({
         '/advisory': [_record('Hudson River (Manhattan)', 16.0)],
         '/profile': PROFILE,
         '/query': {'features': [_feature(21, [SQUARE])]},
     })
-    uploads = []
-    monkeypatch.setattr(dep, 'post_file',
-                        lambda path, **k: uploads.append((path, k['comment'])))
-    monkeypatch.setattr(dep, 'post_message',
-                        lambda *a, **k: pytest.fail('should have uploaded the map'))
     dep.post_waterbody_advisory('test-channel')
 
-    assert len(uploads) == 1
-    path, comment = uploads[0]
-    assert path.endswith('dep_advisory_map.png')
-    assert 'On advisory until' in comment
+    assert len(capture_uploads['paths']) == 1
+    assert capture_uploads['paths'][0].endswith('dep_advisory_map.png')
+    assert 'On advisory until' in capture_uploads['comment']
+
+
+def test_rainfall_is_off_by_default(fake_api, capture_uploads):
+    # nws_precip.py already posts precipitation daily, so the gauge chart is
+    # opt-in. Requesting rainfall-samples at all would fail the fake_api stub.
+    fake_api({
+        '/advisory': [_record('Hudson River (Manhattan)', 16.0)],
+        '/profile': PROFILE,
+        '/query': {'features': [_feature(21, [SQUARE])]},
+    })
+    dep.post_waterbody_advisory('test-channel')
+    assert len(capture_uploads['paths']) == 1
+    assert 'gauge:' not in capture_uploads['comment']
+
+
+def test_rainfall_adds_a_second_image_to_the_same_message(fake_api, capture_uploads):
+    fake_api({
+        '/advisory': [_record('Hudson River (Manhattan)', 16.0)],
+        '/profile': PROFILE,
+        '/query': {'features': [_feature(21, [SQUARE])]},
+        '/rainfall-samples': [
+            {'occurredOn': '2026-08-20T22:00:00', 'precipitation': 1.24},
+            {'occurredOn': '2026-08-20T21:00:00', 'precipitation': 0.31},
+        ],
+        '/sensors': [{'id': 'NR', 'name': 'North River'}],
+    })
+    dep.post_waterbody_advisory('test-channel', rainfall=True)
+
+    # One message carrying both images, not one message apiece.
+    assert capture_uploads['paths'][0].endswith('dep_advisory_map.png')
+    assert capture_uploads['paths'][1].endswith('dep_rainfall_NR.png')
+    assert 'North River gauge' in capture_uploads['comment']
+
+
+def test_rainfall_is_sorted_oldest_first_and_localized(fake_api):
+    # The API returns samples newest-first; plotting them in that order would
+    # draw the series backwards.
+    fake_api({'/rainfall-samples': [
+        {'occurredOn': '2026-08-21T08:00:00', 'precipitation': 0.0},
+        {'occurredOn': '2026-08-21T07:00:00', 'precipitation': 0.5},
+        {'occurredOn': '2026-08-21T06:00:00', 'precipitation': 0.25},
+    ]})
+    rainfall = dep.get_rainfall('NR')
+    assert list(rainfall.index) == [datetime(2026, 8, 21, h, tzinfo=NY) for h in (6, 7, 8)]
+    assert list(rainfall.values) == [0.25, 0.5, 0.0]
+
+
+def test_rainfall_empty_response(fake_api):
+    fake_api({'/rainfall-samples': []})
+    rainfall = dep.get_rainfall('NR')
+    assert rainfall.empty
+    assert dep.recent_total(rainfall) == 0.0
+
+
+def test_recent_total_covers_only_the_trailing_window():
+    index = pd.DatetimeIndex(
+        [datetime(2026, 8, 20, 8, tzinfo=NY) + timedelta(hours=i) for i in range(25)]
+    )
+    # 1.0 in on the oldest hour, which falls outside the trailing 24.
+    rainfall = pd.Series([1.0] + [0.1] * 24, index=index)
+    assert dep.recent_total(rainfall, hours=24) == pytest.approx(2.4)
+    assert float(rainfall.sum()) == pytest.approx(3.4)
+
+
+def test_rainfall_plot_writes_a_png(tmp_path):
+    index = pd.DatetimeIndex(
+        [datetime(2026, 8, 20, 18, tzinfo=NY) + timedelta(hours=i) for i in range(6)]
+    )
+    rainfall = pd.Series([0.5, 1.24, 0.31, 0.07, 0.37, 0.06], index=index)
+    path = dep.plot_rainfall_file(rainfall, 'North River', path=str(tmp_path / 'r.png'))
+    assert path == str(tmp_path / 'r.png')
+    assert (tmp_path / 'r.png').stat().st_size > 0
 
 
 def test_post_raises_on_unknown_waterbody(fake_api):

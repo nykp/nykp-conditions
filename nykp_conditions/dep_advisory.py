@@ -37,12 +37,18 @@ image sized for Slack rather than for an 850px dashboard panel.
 Its `occurredOn` timestamps are naive and local to New York, not UTC. Reading
 them as UTC would put the advisory window four or five hours off.
 
-The dashboard also exposes hourly rainfall per gauge at
-`/api/rainfall-samples?page=0&pageSize=96&sensorId=NR`, which is what its bar
-chart draws. We don't use it: `nws_precip.py` already posts observed
-precipitation. Note if you ever do that `accumulatedLast24Hours` on
-`/api/sensors` is not to be trusted -- it read 0.0 for every gauge on
-2026-08-21, hours after North River had recorded 2.55 in of rain.
+* `GET /api/rainfall-samples?page=0&pageSize=96&sensorId=NR` -- the hourly
+  rainfall behind the dashboard's bar chart, in inches, newest first.
+* `GET /api/sensors` -- the 14 rain gauges, one per wastewater plant.
+
+The rainfall chart is off by default, since `nws_precip.py` already posts
+observed precipitation daily. It earns its place when you want the gauge the
+advisory is actually keyed to rather than Central Park, over four days rather
+than one -- which is what explains an advisory that outlasts the rain.
+
+Don't reach for `accumulatedLast24Hours` on `/api/sensors` when you do: it read
+0.0 for every gauge on 2026-08-21, hours after North River had recorded 2.55 in
+of rain. The hourly samples are the trustworthy source.
 """
 
 import json
@@ -57,12 +63,15 @@ from zoneinfo import ZoneInfo
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import seaborn as sns
 from matplotlib.collections import PatchCollection
+from matplotlib.dates import DateFormatter
 from matplotlib.patches import Patch, Polygon
 
 from utils.format import format_hour
-from utils.scripts import try_main
-from utils.slack import NykpSlackChannels, post_file, post_message
+from utils.scripts import str2bool, try_main
+from utils.slack import NykpSlackChannels, post_files, post_message
 
 DASHBOARD_URL = 'https://nycwaterbodyadvisory.azurewebsites.net/'
 API_BASE = 'https://nycwaterbodyadvisory.azurewebsites.net/api'
@@ -76,6 +85,9 @@ HOME_WATERBODY = 'Hudson River (Manhattan)'
 # Water quality advisories, as opposed to 'CSO' (combined sewer overflow
 # discharge volumes). The two dashboard tabs share the /api/advisory shape.
 WQ = 'WQ'
+
+# The dashboard's own chart shows four days at hourly resolution.
+RAINFALL_SAMPLE_LIMIT = 96
 
 # Simplification tolerance in degrees, ~20 m. The polygons are coastline-
 # accurate and enormous at full resolution; at the scale we plot, a pixel is
@@ -217,6 +229,80 @@ def get_waterbody_shapes(
     return shapes
 
 
+def get_rainfall(
+        gauge: str, limit: int = RAINFALL_SAMPLE_LIMIT, tz: str = DEFAULT_TIMEZONE
+) -> pd.Series:
+    """Hourly rainfall at a gauge, in inches, oldest first and indexed locally.
+
+    The API returns samples newest-first; plotting them in that order would
+    draw the series backwards.
+    """
+    samples = _get_json(
+        f'{API_BASE}/rainfall-samples', page=0, pageSize=limit, sensorId=gauge
+    )
+    if not samples:
+        return pd.Series(dtype=float, index=pd.DatetimeIndex([], tz=tz, name='hour'))
+    index = pd.DatetimeIndex(
+        [_localize(s['occurredOn'], tz=tz) for s in samples], name='hour'
+    )
+    return pd.Series([float(s['precipitation']) for s in samples], index=index).sort_index()
+
+
+def get_gauge_names() -> dict[str, str]:
+    """Map each gauge id to the plant it sits at, e.g. 'NR' -> 'North River'."""
+    return {sensor['id']: sensor['name'] for sensor in _get_json(f'{API_BASE}/sensors')}
+
+
+def recent_total(rainfall: pd.Series, hours: int = 24) -> float:
+    """Rainfall over the last `hours` of the series, in inches.
+
+    Summed from the samples rather than read off `/api/sensors`, whose
+    `accumulatedLast24Hours` field reports 0.0 even after a soaking (see the
+    module docstring).
+    """
+    if rainfall.empty:
+        return 0.0
+    cutoff = rainfall.index.max() - timedelta(hours=hours)
+    return float(rainfall[rainfall.index > cutoff].sum())
+
+
+def plot_rainfall_file(
+        rainfall: pd.Series, gauge_name: str, path: str | None = None
+) -> str:
+    """Plot the hourly rainfall series to a PNG, returning the path written.
+
+    Our version of the dashboard's bar chart. It drops that chart's fixed
+    0-1 inch y-axis, which flattens an ordinary hour of rain and clips an
+    extraordinary one.
+    """
+    if path is None:
+        fd, path = tempfile.mkstemp(prefix='dep_rainfall_', suffix='.png')
+        os.close(fd)
+
+    start, end = rainfall.index.min(), rainfall.index.max()
+    title = (f'Rainfall at the {gauge_name} gauge, '
+             f'{format_hour(start)} - {format_hour(end)}')
+
+    sns.set_theme()
+    fig, ax = plt.subplots(figsize=(10, 4))
+    try:
+        # Bars are an hour wide in date units, aligned to the hour they cover.
+        ax.bar(rainfall.index, rainfall.values, width=1 / 24, align='edge')
+        ax.set_ylabel('Hourly (in)')
+        ax.set_ylim(bottom=0)
+        # matplotlib renders tz-aware timestamps in UTC unless told otherwise,
+        # which would shift every label by the gauge's offset.
+        ax.xaxis.set_major_formatter(DateFormatter('%-I%p %a', tz=rainfall.index.tz))
+        ax.set_title(title)
+
+        fig.autofmt_xdate(rotation=45)
+        fig.savefig(path, bbox_inches='tight', pad_inches=0.25)
+    finally:
+        plt.close(fig)
+
+    return path
+
+
 def plot_advisory_map(
         advisories: list[WaterbodyAdvisory],
         shapes: dict[int, list[np.ndarray]],
@@ -289,7 +375,10 @@ def plot_advisory_map(
 
 
 def format_advisory_post(
-        advisory: WaterbodyAdvisory, advisories: list[WaterbodyAdvisory] | None = None
+        advisory: WaterbodyAdvisory,
+        advisories: list[WaterbodyAdvisory] | None = None,
+        rainfall: pd.Series | None = None,
+        gauge_name: str | None = None,
 ) -> str:
     """Build the Slack message body for one waterbody's advisory."""
     header = f"<{DASHBOARD_URL}|DEP waterbody advisory>: *{advisory.waterbody}*"
@@ -306,6 +395,11 @@ def format_advisory_post(
     if advisories:
         active = sum(1 for a in advisories if a.active)
         lines.append(f"_{active} of {len(advisories)} NYC waterbodies are on advisory._")
+    if rainfall is not None and not rainfall.empty:
+        gauge = gauge_name or advisory.rain_gauge
+        lines.append(f"Rainfall at the {gauge} gauge: "
+                     f"*{recent_total(rainfall, hours=24):.2f} in* in the last 24 hours, "
+                     f"{float(rainfall.sum()):.2f} in over the plotted window.")
     return '\n'.join(lines)
 
 
@@ -313,12 +407,16 @@ def post_waterbody_advisory(
         channel: str,
         waterbody: str = HOME_WATERBODY,
         post_when_clear: bool = False,
+        rainfall: bool = False,
 ) -> None:
     """Post the waterbody's advisory status to Slack, with a map of the city's.
 
     Quiet by default when there's no advisory: a standing "no advisory" line
     would be noise on the great majority of days, and the map is only worth
     looking at when something on it is red.
+
+    Pass `rainfall` to attach the gauge's hourly chart alongside the map. Off by
+    default because `nws_precip.py` already posts observed precipitation.
     """
     advisories = get_advisories()
     advisory = find_advisory(advisories, waterbody=waterbody)
@@ -332,14 +430,27 @@ def post_waterbody_advisory(
             post_message(format_advisory_post(advisory), channel=channel, unfurl_links=False)
         return
 
-    post_text = format_advisory_post(advisory, advisories)
-    # Keep the map in a temp dir that's cleaned up only after the upload
-    # returns (success or failure), so the file can't vanish mid-upload.
+    gauge_rainfall, gauge_name = None, None
+    if rainfall and advisory.rain_gauge:
+        gauge_rainfall = get_rainfall(advisory.rain_gauge)
+        gauge_name = get_gauge_names().get(advisory.rain_gauge, advisory.rain_gauge)
+
+    post_text = format_advisory_post(advisory, advisories, gauge_rainfall, gauge_name)
+    # Keep the images in a temp dir that's cleaned up only after the upload
+    # returns (success or failure), so they can't vanish mid-upload.
     with tempfile.TemporaryDirectory() as tmp_dir:
         map_path = os.path.join(tmp_dir, 'dep_advisory_map.png')
         plot_advisory_map(advisories, get_waterbody_shapes(), highlight=waterbody, path=map_path)
-        post_file(map_path, title='DEP waterbody advisories',
-                  channel=channel, comment=post_text)
+        uploads = [(map_path, 'DEP waterbody advisories')]
+
+        if gauge_rainfall is not None and not gauge_rainfall.empty:
+            rainfall_path = os.path.join(tmp_dir, f'dep_rainfall_{advisory.rain_gauge}.png')
+            plot_rainfall_file(gauge_rainfall, gauge_name, path=rainfall_path)
+            uploads.append((rainfall_path, 'Rainfall behind the advisory'))
+
+        # Both images go up as one message rather than one apiece, so the
+        # section stays together in the channel.
+        post_files(uploads, channel=channel, comment=post_text)
 
 
 """----------------------------------------------------------------------------
@@ -353,12 +464,15 @@ def parse_args():
     parser.add_argument('--waterbody', type=str, default=HOME_WATERBODY)
     parser.add_argument('--post-when-clear', action='store_true',
                         help='Post a "no advisory" line instead of staying quiet')
+    parser.add_argument('--rainfall', type=str2bool, default=False,
+                        help='Also attach the gauge rainfall chart (default: False)')
     return parser
 
 
 def main(args):
     post_waterbody_advisory(args.channel, waterbody=args.waterbody,
-                            post_when_clear=args.post_when_clear)
+                            post_when_clear=args.post_when_clear,
+                            rainfall=args.rainfall)
 
 
 if __name__ == '__main__':

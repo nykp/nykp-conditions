@@ -100,3 +100,44 @@ def test_get_channel_id_raises_with_useful_message():
     client = FakeClient([{'channels': [{'name': 'general', 'id': 'C0'}]}])
     with pytest.raises(ValueError, match="No Slack channel named 'nope'"):
         slack.get_channel_id(client, 'nope')
+
+
+class FakeUploadClient(FakeClient):
+    """Records what files_upload_v2 was called with and echoes back a response."""
+
+    def __init__(self, channels):
+        super().__init__(channels)
+        self.upload_kwargs = None
+
+    def files_upload_v2(self, **kwargs):
+        self.upload_kwargs = kwargs
+        uploads = kwargs['file_uploads']
+        return FakeResponse(files=[{'id': f'F{i}', 'title': u['title']}
+                                   for i, u in enumerate(uploads)])
+
+
+def test_post_files_uploads_everything_in_one_call():
+    # One call means one message in the channel; uploading a file at a time
+    # would split a section's images apart.
+    client = FakeUploadClient([{'channels': [{'name': 'hudson-conditions', 'id': 'C1'}]}])
+    files = slack.post_files(
+        [('/tmp/map.png', 'Map'), ('/tmp/rain.png', 'Rain')],
+        channel='hudson-conditions', comment='hello', client=client,
+    )
+
+    assert [f['title'] for f in files] == ['Map', 'Rain']
+    assert client.upload_kwargs['file_uploads'] == [
+        {'file': '/tmp/map.png', 'title': 'Map'},
+        {'file': '/tmp/rain.png', 'title': 'Rain'},
+    ]
+    assert client.upload_kwargs['channel'] == 'C1'
+    assert client.upload_kwargs['initial_comment'] == 'hello'
+
+
+def test_post_file_returns_the_single_file():
+    # files_upload_v2 always returns a `files` list; the singular `file` key
+    # only appears when exactly one was uploaded, so post_file reads the list.
+    client = FakeUploadClient([{'channels': [{'name': 'hudson-conditions', 'id': 'C1'}]}])
+    file = slack.post_file('/tmp/map.png', title='Map', channel='hudson-conditions',
+                           client=client)
+    assert file['title'] == 'Map'

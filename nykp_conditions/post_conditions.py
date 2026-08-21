@@ -63,6 +63,8 @@ def parse_args() -> ArgumentParser:
     parser.add_argument('--days', type=int, default=1)
     parser.add_argument('--water-temp-plot', type=str2bool, default=False,
                         help='Attach the water temperature timeseries plot (default: False)')
+    parser.add_argument('--dep-rainfall', type=str2bool, default=False,
+                        help='Attach the DEP gauge rainfall chart to the advisory (default: False)')
     parser = _add_config_fields(parser)
     return parser
 
@@ -82,7 +84,8 @@ def main(args):
     if args.advisories:
         sections.append(('advisories', lambda: post_waterbody_advisories(channel, days=args.days)))
     if args.dep_advisory:
-        sections.append(('DEP advisory', lambda: post_waterbody_advisory(channel)))
+        sections.append(('DEP advisory',
+                         lambda: post_waterbody_advisory(channel, rainfall=args.dep_rainfall)))
 
     failed = post_sections(sections)
     if failed:

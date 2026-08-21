@@ -28,6 +28,13 @@ stays quiet unless the Hudson is actually on advisory, since a standing "no
 advisory" line would be noise on most days. Pass `--post-when-clear` when
 running it by hand to see the all-clear.
 
+It can also attach the rainfall chart for the gauge the advisory is keyed to
+(`--dep-rainfall true` on the daily run, `--rainfall true` on the script). Off
+by default, since `nws_precip.py` already posts observed precipitation; it's
+worth turning on when you want the DEP gauge rather than Central Park, over
+four days rather than one, which is what explains an advisory that outlasts
+the rain. Both images post as a single Slack message.
+
 ### The advisory map
 
 The dashboard's map can't be downloaded. It's an ArcGIS JavaScript layer that
@@ -126,7 +133,7 @@ python water_temps.py --channel test-python-api --plot true
 python nws_forecast.py --keep          # Leaves the downloaded plot in cache/
 python nws_precip.py --station KNYC --hours 24
 python notify_nyc.py --days 7
-python dep_advisory.py --post-when-clear   # Posts even with no advisory
+python dep_advisory.py --rainfall true      # Adds the gauge rainfall chart
 ```
 
 Every script accepts `--pdb` (break on entry) and `--postmortem` (drop into

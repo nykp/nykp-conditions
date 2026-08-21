@@ -95,12 +95,28 @@ def post_text_attachment(
                         **kwargs)
 
 
-def post_file(path: str, title: str, channel: str, comment=None, client=None, token=None) -> dict:
-    """Upload a file to a channel, optionally with an initial comment."""
+def post_files(
+        uploads: list[tuple[str, str]], channel: str, comment=None, client=None, token=None
+) -> list[dict]:
+    """Upload several (path, title) files to a channel as a single message.
+
+    Uploading them one at a time would post one message per file, which splits
+    a section's images apart in the channel.
+    """
     if client is None:
         client = get_client(token=token)
     channel_id = get_channel_id(client, channel)
     resp = _with_retries(
-        client.files_upload_v2, file=path, title=title, channel=channel_id, initial_comment=comment
+        client.files_upload_v2,
+        file_uploads=[{'file': path, 'title': title} for path, title in uploads],
+        channel=channel_id,
+        initial_comment=comment,
     )
-    return resp.data['file']
+    return resp.data['files']
+
+
+def post_file(path: str, title: str, channel: str, comment=None, client=None, token=None) -> dict:
+    """Upload a file to a channel, optionally with an initial comment."""
+    files = post_files([(path, title)], channel=channel, comment=comment,
+                       client=client, token=token)
+    return files[0]
