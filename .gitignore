@@ -12,3 +12,6 @@ dist/
 
 # Test artifacts
 .pytest_cache/
+
+# Exploratory notebooks (contain credentials; never committed)
+nykp_conditions/notebooks/
