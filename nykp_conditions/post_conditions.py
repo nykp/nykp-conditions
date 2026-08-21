@@ -85,7 +85,7 @@ def main(args):
         sections.append(('advisories', lambda: post_waterbody_advisories(channel, days=args.days)))
     if args.dep_advisory:
         sections.append(('DEP advisory',
-                         lambda: post_waterbody_advisory(channel, rainfall=args.dep_rainfall)))
+                         lambda: post_waterbody_advisory(channel, plot_rainfall=args.dep_rainfall)))
 
     failed = post_sections(sections)
     if failed:

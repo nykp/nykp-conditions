@@ -379,6 +379,7 @@ def format_advisory_post(
         advisories: list[WaterbodyAdvisory] | None = None,
         rainfall: pd.Series | None = None,
         gauge_name: str | None = None,
+        with_class: bool = False,
 ) -> str:
     """Build the Slack message body for one waterbody's advisory."""
     header = f"<{DASHBOARD_URL}|DEP waterbody advisory>: *{advisory.waterbody}*"
@@ -390,7 +391,7 @@ def format_advisory_post(
         f"*On advisory until {format_hour(advisory.until)}* "
         f"({advisory.duration_hours:.0f} more hours as of {format_hour(advisory.occurred_on)})",
     ]
-    if advisory.class_description:
+    if with_class and advisory.class_description:
         lines.append(f"Class {advisory.water_class}: {advisory.class_description}")
     if advisories:
         active = sum(1 for a in advisories if a.active)
@@ -407,7 +408,7 @@ def post_waterbody_advisory(
         channel: str,
         waterbody: str = HOME_WATERBODY,
         post_when_clear: bool = False,
-        rainfall: bool = False,
+        plot_rainfall: bool = False,
 ) -> None:
     """Post the waterbody's advisory status to Slack, with a map of the city's.
 
@@ -415,7 +416,7 @@ def post_waterbody_advisory(
     would be noise on the great majority of days, and the map is only worth
     looking at when something on it is red.
 
-    Pass `rainfall` to attach the gauge's hourly chart alongside the map. Off by
+    Pass `plot_rainfall` to attach the gauge's hourly chart alongside the map. Off by
     default because `nws_precip.py` already posts observed precipitation.
     """
     advisories = get_advisories()
@@ -431,7 +432,7 @@ def post_waterbody_advisory(
         return
 
     gauge_rainfall, gauge_name = None, None
-    if rainfall and advisory.rain_gauge:
+    if advisory.rain_gauge:
         gauge_rainfall = get_rainfall(advisory.rain_gauge)
         gauge_name = get_gauge_names().get(advisory.rain_gauge, advisory.rain_gauge)
 
@@ -443,7 +444,7 @@ def post_waterbody_advisory(
         plot_advisory_map(advisories, get_waterbody_shapes(), highlight=waterbody, path=map_path)
         uploads = [(map_path, 'DEP waterbody advisories')]
 
-        if gauge_rainfall is not None and not gauge_rainfall.empty:
+        if plot_rainfall and gauge_rainfall is not None and not gauge_rainfall.empty:
             rainfall_path = os.path.join(tmp_dir, f'dep_rainfall_{advisory.rain_gauge}.png')
             plot_rainfall_file(gauge_rainfall, gauge_name, path=rainfall_path)
             uploads.append((rainfall_path, 'Rainfall behind the advisory'))
@@ -472,7 +473,7 @@ def parse_args():
 def main(args):
     post_waterbody_advisory(args.channel, waterbody=args.waterbody,
                             post_when_clear=args.post_when_clear,
-                            rainfall=args.rainfall)
+                            plot_rainfall=args.rainfall)
 
 
 if __name__ == '__main__':
