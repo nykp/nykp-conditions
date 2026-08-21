@@ -3,8 +3,8 @@
 Posts a daily Hudson River conditions summary to the New York Kayak Polo Slack.
 
 Every morning a GitHub Actions run collects current predictions, water
-temperature, the NWS forecast, observed precipitation, and any Notify NYC
-waterbody advisories, and posts them to `#hudson-conditions`.
+temperature, the NWS forecast, observed precipitation, and any waterbody
+advisories, and posts them to `#hudson-conditions`.
 
 ## What gets posted
 
@@ -17,10 +17,29 @@ Listed in the order they're posted:
 | Forecast meteogram and text summary | forecast.weather.gov (scraped) | `nws_forecast.py` |
 | Observed precipitation, last 24 hours, with a plot | api.weather.gov station observations | `nws_precip.py` |
 | Waterbody advisories (e.g. sewage discharge) | Notify NYC RSS feed | `notify_nyc.py` |
+| Advisory status for the Hudson off Pier 96, with a citywide map | NYC DEP Waterbody Advisory Dashboard | `dep_advisory.py` |
 
 Each section posts independently. If one upstream source is down the others
 still go out; the run then fails at the end so the failure is visible in the
 Actions log rather than silently swallowed.
+
+The DEP section is the one exception to "every section posts every day": it
+stays quiet unless the Hudson is actually on advisory, since a standing "no
+advisory" line would be noise on most days. Pass `--post-when-clear` when
+running it by hand to see the all-clear.
+
+### The advisory map
+
+The dashboard's map can't be downloaded. It's an ArcGIS JavaScript layer that
+paints vector features onto a canvas in the browser, and the FeatureServer
+behind it advertises `Query` but not `Map`, so there's no `export` image
+operation to hit either. `dep_advisory.py` pulls the waterbody polygons
+instead — generalized, which takes them from 10 MB to ~140 KB — joins them to
+the live advisory status on `FID`, and draws the map itself.
+
+Two sources, deliberately kept separate: Notify NYC tells us what the city
+*announced*, while the DEP dashboard carries the hour-by-hour status of all 45
+waterbodies whether or not anything was announced.
 
 ## How it runs
 
@@ -107,6 +126,7 @@ python water_temps.py --channel test-python-api --plot true
 python nws_forecast.py --keep          # Leaves the downloaded plot in cache/
 python nws_precip.py --station KNYC --hours 24
 python notify_nyc.py --days 7
+python dep_advisory.py --post-when-clear   # Posts even with no advisory
 ```
 
 Every script accepts `--pdb` (break on entry) and `--postmortem` (drop into
@@ -120,8 +140,12 @@ pytest
 
 Tests live in `tests/` and cover parsing, formatting, and error handling with
 no network access — HTTP calls, the Slack client, and the RSS feed are all
-stubbed. `tests/conftest.py` puts `nykp_conditions/` on `sys.path` so the tests
-import the modules the same flat way the scripts do.
+stubbed. `test_post_conditions.py` stubs every section poster through an
+autouse fixture: a section left unstubbed there would reach the real upstream
+sources and post to a real Slack channel.
+
+`tests/conftest.py` puts `nykp_conditions/` on `sys.path` so the tests import
+the modules the same flat way the scripts do.
 
 CI runs them on every push and pull request against Python 3.11 and 3.13
 (`.github/workflows/tests.yml`) — the floor declared in `pyproject.toml` and
@@ -136,6 +160,7 @@ nykp_conditions/
   water_temps.py       Water temperature range (plot optional)
   nws_forecast.py      NWS meteogram + text forecast
   notify_nyc.py        Notify NYC waterbody advisories
+  dep_advisory.py      DEP advisory status + citywide map
   nws_precip.py        Observed precipitation + plot
   utils/
     slack.py           Posting, retries on transient errors, channel lookup
