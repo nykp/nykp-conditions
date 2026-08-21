@@ -1,54 +1,28 @@
 """Waterbody advisories from the NYC DEP Waterbody Advisory Dashboard.
 
-`notify_nyc.py` reports advisories the way the city *announces* them: a prose
-RSS item, published only when DEP decides to push one out. This module reads
-the dashboard those announcements come from
+Where `notify_nyc.py` reports what the city *announced*, this reads the
+dashboard those announcements come from
 (https://nycwaterbodyadvisory.azurewebsites.net/), which carries the current
-status of all 45 waterbodies, hour by hour, whether or not anything was
-announced.
+status of all 45 waterbodies whether or not anything was announced.
 
-## There is no map image to download
+The dashboard's map can't be downloaded: it's an ArcGIS JS layer painted onto
+a canvas in the browser, and its FeatureServer advertises `Query` but not
+`Map`, so there's no `export` image operation either. `plot_advisory_map`
+pulls the polygons and draws our own instead.
 
-The dashboard's map is not a picture the server draws. It is an ArcGIS
-JavaScript layer that ships vector features to the browser and paints them on
-a canvas there, so nothing on that page is a URL we can fetch. Nor does the
-layer behind it offer a rendered fallback: its FeatureServer advertises
-`Query` but not `Map`, which means the ArcGIS `export` image operation is not
-available on it, and the `f=image` responses a MapServer would give simply do
-not exist here.
+Endpoints, all unauthenticated:
 
-What the server will hand over is the geometry. So `plot_advisory_map` pulls
-the waterbody polygons, joins them to the live status, and draws our own map.
-That turns out better than a screenshot would have been: we can key the colors
-to advisory status alone, outline the water we actually paddle on, and get an
-image sized for Slack rather than for an 850px dashboard panel.
+* `/api/advisory?advisoryType=WQ` -- per waterbody: latest rainfall hour
+  (`occurredOn`), hours of advisory left from it (`duration`, 0 = none), DEC
+  class, and rain gauge.
+* `/api/profile` -- dashboard config, including the ArcGIS layer URLs.
+* `<layer>/query` -- the polygons, requested generalized (10 MB -> ~140 KB).
+* `/api/rainfall-samples?...&sensorId=NR` -- hourly rainfall, inches, newest
+  first. `/api/sensors` -- the 14 gauges.
 
-## The API
-
-* `GET /api/advisory?advisoryType=WQ` -- one record per waterbody, giving the
-  most recent rainfall hour (`occurredOn`), how many more hours the advisory
-  runs from it (`duration`), the waterbody's DEC class, and the rain gauge the
-  advisory is keyed to. A `duration` of 0 means no advisory.
-* `GET /api/profile` -- dashboard config, including the ArcGIS layer URLs.
-* `GET <layer>/query` -- the waterbody polygons. Requested generalized, which
-  takes the response from 10 MB to about 140 KB with no visible difference at
-  the size we plot.
-
-Its `occurredOn` timestamps are naive and local to New York, not UTC. Reading
-them as UTC would put the advisory window four or five hours off.
-
-* `GET /api/rainfall-samples?page=0&pageSize=96&sensorId=NR` -- the hourly
-  rainfall behind the dashboard's bar chart, in inches, newest first.
-* `GET /api/sensors` -- the 14 rain gauges, one per wastewater plant.
-
-The rainfall chart is off by default, since `nws_precip.py` already posts
-observed precipitation daily. It earns its place when you want the gauge the
-advisory is actually keyed to rather than Central Park, over four days rather
-than one -- which is what explains an advisory that outlasts the rain.
-
-Don't reach for `accumulatedLast24Hours` on `/api/sensors` when you do: it read
-0.0 for every gauge on 2026-08-21, hours after North River had recorded 2.55 in
-of rain. The hourly samples are the trustworthy source.
+Two traps: `occurredOn` is naive **local** time, not UTC; and
+`accumulatedLast24Hours` on `/api/sensors` read 0.0 for every gauge on
+2026-08-21, hours after North River recorded 2.55 in. Sum the samples instead.
 """
 
 import json
@@ -82,19 +56,15 @@ DEFAULT_TIMEZONE = 'America/New_York'
 # We paddle off Pier 96, which is Hudson River (Manhattan) on DEP's map.
 HOME_WATERBODY = 'Hudson River (Manhattan)'
 
-# Water quality advisories, as opposed to 'CSO' (combined sewer overflow
-# discharge volumes). The two dashboard tabs share the /api/advisory shape.
+# Water quality, vs 'CSO' discharge volumes; same /api/advisory shape.
 WQ = 'WQ'
 
 # The dashboard's own chart shows four days at hourly resolution.
 RAINFALL_SAMPLE_LIMIT = 96
 
-# Simplification tolerance in degrees, ~20 m. The polygons are coastline-
-# accurate and enormous at full resolution; at the scale we plot, a pixel is
-# roughly 80 m, so this is well below anything that could show.
+# ~20 m, well under the ~80 m a pixel covers at the size we plot.
 GEOMETRY_TOLERANCE = 0.0002
-# Bounds of the layer, padded slightly. Fixed rather than derived from the
-# geometry so the map frames identically from day to day.
+# Fixed rather than derived, so the map frames identically day to day.
 MAP_BOUNDS = (-74.28, -73.72, 40.47, 40.93)  # west, east, south, north
 
 ADVISORY_COLOR = '#d94a3d'
@@ -219,8 +189,7 @@ def get_waterbody_shapes(
     shapes = {}
     for feature in features:
         geometry = feature['geometry']
-        # A waterbody may be a Polygon or, where it wraps an island, a
-        # MultiPolygon; either way we only need the rings to draw it.
+        # Polygon, or MultiPolygon where it wraps an island.
         if geometry['type'] == 'Polygon':
             rings = geometry['coordinates']
         else:
@@ -412,8 +381,7 @@ def format_advisory_post(
     if rainfall is not None and not rainfall.empty:
         gauge = gauge_name or advisory.rain_gauge
         totals = [f"*{recent_total(rainfall, hours=24):.2f} in* over the last 24 hours"]
-        # Only worth a second figure when the series reaches back past the
-        # first one; otherwise it would restate the same number.
+        # A shorter series would just restate the 24-hour figure.
         covered = window_hours(rainfall)
         if covered > 24:
             totals.append(f"{float(rainfall.sum()):.2f} in over the last {covered} hours")
@@ -429,12 +397,9 @@ def post_waterbody_advisory(
 ) -> None:
     """Post the waterbody's advisory status to Slack, with a map of the city's.
 
-    Quiet by default when there's no advisory: a standing "no advisory" line
-    would be noise on the great majority of days, and the map is only worth
-    looking at when something on it is red.
-
-    Pass `plot_rainfall` to attach the gauge's hourly chart alongside the map. Off by
-    default because `nws_precip.py` already posts observed precipitation.
+    Silent when there's no advisory, unless `post_when_clear`. `plot_rainfall`
+    attaches the gauge chart, off by default since `nws_precip.py` already
+    posts precipitation.
     """
     advisories = get_advisories()
     advisory = find_advisory(advisories, waterbody=waterbody)
@@ -466,8 +431,7 @@ def post_waterbody_advisory(
             plot_rainfall_file(gauge_rainfall, gauge_name, path=rainfall_path)
             uploads.append((rainfall_path, 'Rainfall behind the advisory'))
 
-        # Both images go up as one message rather than one apiece, so the
-        # section stays together in the channel.
+        # One message, so the section stays together in the channel.
         post_files(uploads, channel=channel, comment=post_text)
 
 

@@ -112,14 +112,20 @@ def format_temps_post(station: Station, temps: TempRange, hours: int = DEFAULT_H
     ])
 
 
-def plot_temps_file(water_temps: pd.Series, station: Station, path=None) -> str:
-    """Plot the temperature series to a PNG, returning the path written."""
-    start_dt = water_temps.index[0]
-    end_dt = water_temps.index[-1]
+def plot_temps_file(
+        water_temps: pd.Series, station: Station, path=None, tz: str = DEFAULT_TIMEZONE
+) -> str:
+    """Plot the temperature series to a PNG, returning the path written.
+
+    Plotted in local time to agree with the message text, which reports its
+    times via `temp_range`. The series arrives UTC-indexed, and matplotlib
+    renders tz-aware timestamps in UTC unless told otherwise, so an unconverted
+    plot contradicted the text it was posted with by four hours.
+    """
+    local = water_temps.tz_convert(tz)
     title_dt_fmt = '%H:%M:%S %m/%d/%Y'
-    title = f'{start_dt.strftime(title_dt_fmt)} - {end_dt.strftime(title_dt_fmt)} at {station.name}'
-    ylabel = 'Water Temp. (F)'
-    xtick_dt_fmt = DateTimeFormats.h_m_s
+    title = (f'{local.index[0].strftime(title_dt_fmt)} - '
+             f'{local.index[-1].strftime(title_dt_fmt)} at {station.name}')
 
     if path is None:
         fd, path = tempfile.mkstemp(prefix=f'water_temps_{station.id}_', suffix='.png')
@@ -128,10 +134,12 @@ def plot_temps_file(water_temps: pd.Series, station: Station, path=None) -> str:
     sns.set_theme()
     plt.figure(figsize=(10, 4))
     try:
-        plt.plot(water_temps.rolling(10, center=True, win_type='boxcar').mean())
-        plt.gca().xaxis.set_major_formatter(DateFormatter(xtick_dt_fmt))
+        plt.plot(local.rolling(10, center=True, win_type='boxcar').mean())
+        plt.gca().xaxis.set_major_formatter(
+            DateFormatter(DateTimeFormats.h_m_s, tz=local.index.tz)
+        )
         plt.xticks(rotation=45)
-        plt.ylabel(ylabel)
+        plt.ylabel('Water Temp. (F)')
         plt.title(title)
         plt.savefig(path, bbox_inches='tight', pad_inches=0.25)
     finally:

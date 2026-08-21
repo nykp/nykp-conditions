@@ -125,3 +125,56 @@ def test_post_water_temps_uploads_existing_file_then_cleans_up(monkeypatch, stub
 
     assert uploaded['existed_during_upload'] is True
     assert not os.path.exists(uploaded['path'])
+
+
+def _utc_series(periods=36, start='2026-08-21T00:00Z'):
+    index = pd.date_range(start, periods=periods, freq='h')
+    return pd.Series(range(70, 70 + periods), index=index, dtype=float)
+
+
+def test_plot_title_uses_local_time(tmp_path, monkeypatch):
+    # Bug: the series is UTC-indexed and matplotlib renders tz-aware timestamps
+    # in UTC unless told otherwise, so the plot disagreed with the message
+    # text -- which reports local time via temp_range -- by four hours.
+    station = wt.Station(id='8518750', name='The Battery', lat=40.7, lon=-74.0)
+    titles = []
+    monkeypatch.setattr(wt.plt, 'title', lambda t: titles.append(t))
+
+    wt.plot_temps_file(_utc_series(), station, path=str(tmp_path / 'p.png'))
+
+    # 00:00Z on 8/21 is 20:00 on 8/20 in New York.
+    assert titles[0].startswith('20:00:00 08/20/2026')
+
+
+def test_plot_axis_formatter_carries_the_local_zone(tmp_path, monkeypatch):
+    station = wt.Station(id='8518750', name='The Battery', lat=40.7, lon=-74.0)
+    formatters = []
+    real = wt.DateFormatter
+    monkeypatch.setattr(wt, 'DateFormatter',
+                        lambda fmt, tz=None: formatters.append(tz) or real(fmt, tz=tz))
+
+    wt.plot_temps_file(_utc_series(), station, path=str(tmp_path / 'p.png'))
+
+    assert formatters and str(formatters[0]) == 'America/New_York'
+
+
+def test_plot_and_post_text_agree_on_the_time(tmp_path, monkeypatch):
+    # The two used different clocks for the same instant.
+    station = wt.Station(id='8518750', name='The Battery', lat=40.7, lon=-74.0)
+    temps = _utc_series()
+    titles = []
+    monkeypatch.setattr(wt.plt, 'title', lambda t: titles.append(t))
+    wt.plot_temps_file(temps, station, path=str(tmp_path / 'p.png'))
+
+    rng = wt.temp_range(temps)
+    assert rng.low_at.strftime('%H:%M:%S %m/%d/%Y') == titles[0].split(' - ')[0]
+
+
+def test_plot_temps_file_uses_a_temp_file_without_a_path():
+    station = wt.Station(id='8518750', name='The Battery', lat=40.7, lon=-74.0)
+    path = wt.plot_temps_file(_utc_series(), station)
+    try:
+        assert os.path.basename(path).startswith('water_temps_8518750_')
+        assert os.path.getsize(path) > 0
+    finally:
+        os.unlink(path)

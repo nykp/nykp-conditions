@@ -24,6 +24,12 @@ CURRENTS_CSV_DATE_FMT = 'YYYY-MM-DD'
 ONE_WEEK_STRS = ('w', '1w')
 TWO_DAY_STRS = ('48h', '2d')
 
+# Keys are matched as substrings of the CSV header, whose units vary by
+# endpoint ('Speed (knots)' vs 'Speed (cm/s)').
+COLUMN_RENAMES = {'Date_Time': 'datetime', 'Speed': 'knots'}
+SLACK_THRESHOLD_KNOTS = 0.1
+NO_READING = 'no reading'
+
 @dataclass
 class Station:
     name: str
@@ -152,43 +158,52 @@ def retrieve_currents_table(
     return CurrentsPredictions(df, station_link)
 
 
+def current_stage(knots) -> str:
+    """Label a signed speed as max flood, max ebb, or slack.
+
+    A blank cell in NOAA's CSV parses to NaN, which compares False against both
+    thresholds; untested, that reported a missing reading as slack water.
+    """
+    if pd.isna(knots):
+        return NO_READING
+    if knots > SLACK_THRESHOLD_KNOTS:
+        return 'max flood'
+    if knots < -SLACK_THRESHOLD_KNOTS:
+        return 'max ebb'
+    return 'slack'
+
+
+def normalize_currents_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Rename the CSV's columns and split its timestamps into date and time."""
+    df = rename_cols(df, COLUMN_RENAMES)
+    df['date'] = df['datetime'].map(lambda dts: dts.split(' ')[0])
+    df['time'] = df['datetime'].map(lambda dts: ' '.join(dts.split(' ')[1:]))
+    return df
+
+
 def format_currents_table(df: pd.DataFrame, date=None) -> str:
     """Render one day's predictions as lines of 'time  stage (speed)'."""
     if date is None:
         date = pendulum.today()
     if not isinstance(date, str):
         date = date.format('YYYY-MM-DD')
-    col_renames = {'Date_Time (LST_LDT)': 'datetime',
-                   'Speed (knots)': 'knots'}
-    df = rename_cols(df, col_renames)
-    df['date'] = df['datetime'].map(lambda dts: dts.split(' ')[0])
-    df['time'] = df['datetime'].map(lambda dts: ' '.join(dts.split(' ')[1:]))
-    df['mph'] = df['knots'].map(knots_to_mph)
-    stages = []
-    for val in df['knots']:
-        if val > 0.1:
-            stages.append('max flood')
-        elif val < -0.1:
-            stages.append('max ebb')
-        else:
-            stages.append('slack')
-    df['stage'] = stages
-    text = ''
-    today_df = df[df['date'] == date]
-    for _, row in today_df.iterrows():
-        text += f"{row['time']}  "
-        text += row['stage']
-        if row['stage'] != 'slack':
+    df = normalize_currents_table(df)
+
+    lines = []
+    for _, row in df[df['date'] == date].iterrows():
+        stage = current_stage(row['knots'])
+        line = f"{row['time']}  {stage}"
+        if stage not in (NO_READING, 'slack'):
             # Speed is signed to encode direction, which 'flood'/'ebb' already
             # says, so show the magnitude rather than a confusing "-1.4 mph".
-            text += f" ({abs(row['mph']):.1f} mph)"
-        text += '\n'
-    return text.rstrip()
+            line += f" ({abs(knots_to_mph(row['knots'])):.1f} mph)"
+        lines.append(line)
+    return '\n'.join(lines)
 
 
 def format_currents_post(predictions: CurrentsPredictions, station: Station, days: int = 1) -> str:
     """Build the Slack message body: a header link plus one block per day."""
-    dates = sorted(predictions.table['Date_Time (LST_LDT)'].map(lambda dt: dt.split(' ')[0]).unique())
+    dates = sorted(normalize_currents_table(predictions.table)['date'].unique())
     header = f"<{predictions.link}|NOAA current predictions at {station.name} (depth: {station.depth})>"
     blocks = []
     for d in dates[:days]:
