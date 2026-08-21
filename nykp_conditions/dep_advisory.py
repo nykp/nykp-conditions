@@ -266,6 +266,19 @@ def recent_total(rainfall: pd.Series, hours: int = 24) -> float:
     return float(rainfall[rainfall.index > cutoff].sum())
 
 
+def window_hours(rainfall: pd.Series) -> int:
+    """How many hours of rainfall the series covers.
+
+    Measured across the index rather than counted as `len(rainfall)`, so a gap
+    in the gauge's reporting still describes the real period. Each sample is
+    one hour's accumulation, so the span is inclusive of both endpoints.
+    """
+    if rainfall.empty:
+        return 0
+    span = rainfall.index.max() - rainfall.index.min()
+    return round(span.total_seconds() / 3600) + 1
+
+
 def plot_rainfall_file(
         rainfall: pd.Series, gauge_name: str, path: str | None = None
 ) -> str:
@@ -398,9 +411,13 @@ def format_advisory_post(
         lines.append(f"_{active} of {len(advisories)} NYC waterbodies are on advisory._")
     if rainfall is not None and not rainfall.empty:
         gauge = gauge_name or advisory.rain_gauge
-        lines.append(f"Rainfall at the {gauge} gauge: "
-                     f"*{recent_total(rainfall, hours=24):.2f} in* in the last 24 hours, "
-                     f"{float(rainfall.sum()):.2f} in over the plotted window.")
+        totals = [f"*{recent_total(rainfall, hours=24):.2f} in* over the last 24 hours"]
+        # Only worth a second figure when the series reaches back past the
+        # first one; otherwise it would restate the same number.
+        covered = window_hours(rainfall)
+        if covered > 24:
+            totals.append(f"{float(rainfall.sum()):.2f} in over the last {covered} hours")
+        lines.append(f"Rainfall at the {gauge} gauge: " + ', '.join(totals) + '.')
     return '\n'.join(lines)
 
 

@@ -156,8 +156,13 @@ def test_format_post_when_active():
     ]
     text = dep.format_advisory_post(advisories[0], advisories)
     assert 'On advisory until 12am Sat' in text
-    assert 'Class SB' in text
     assert '1 of 2 NYC waterbodies' in text
+
+
+def test_water_class_is_opt_in():
+    advisory = dep.WaterbodyAdvisory.parse(_record('Hudson River (Manhattan)', 16.0))
+    assert 'Class SB' not in dep.format_advisory_post(advisory)
+    assert 'Class SB' in dep.format_advisory_post(advisory, with_class=True)
 
 
 def test_format_post_when_clear():
@@ -198,12 +203,20 @@ def capture_uploads(monkeypatch):
     return captured
 
 
+ACTIVE_POST = {
+    '/advisory': [_record('Hudson River (Manhattan)', 16.0)],
+    '/profile': PROFILE,
+    '/query': {'features': [_feature(21, [SQUARE])]},
+    '/rainfall-samples': [
+        {'occurredOn': '2026-08-20T22:00:00', 'precipitation': 1.24},
+        {'occurredOn': '2026-08-20T21:00:00', 'precipitation': 0.31},
+    ],
+    '/sensors': [{'id': 'NR', 'name': 'North River'}],
+}
+
+
 def test_post_uploads_the_map_when_active(fake_api, capture_uploads):
-    fake_api({
-        '/advisory': [_record('Hudson River (Manhattan)', 16.0)],
-        '/profile': PROFILE,
-        '/query': {'features': [_feature(21, [SQUARE])]},
-    })
+    fake_api(ACTIVE_POST)
     dep.post_waterbody_advisory('test-channel')
 
     assert len(capture_uploads['paths']) == 1
@@ -211,31 +224,19 @@ def test_post_uploads_the_map_when_active(fake_api, capture_uploads):
     assert 'On advisory until' in capture_uploads['comment']
 
 
-def test_rainfall_is_off_by_default(fake_api, capture_uploads):
-    # nws_precip.py already posts precipitation daily, so the gauge chart is
-    # opt-in. Requesting rainfall-samples at all would fail the fake_api stub.
-    fake_api({
-        '/advisory': [_record('Hudson River (Manhattan)', 16.0)],
-        '/profile': PROFILE,
-        '/query': {'features': [_feature(21, [SQUARE])]},
-    })
+def test_rainfall_totals_post_but_the_chart_is_opt_in(fake_api, capture_uploads):
+    # nws_precip.py already posts precipitation daily, so the chart is opt-in.
+    # The gauge totals are a line of text and always go out.
+    fake_api(ACTIVE_POST)
     dep.post_waterbody_advisory('test-channel')
+
     assert len(capture_uploads['paths']) == 1
-    assert 'gauge:' not in capture_uploads['comment']
+    assert 'North River gauge' in capture_uploads['comment']
 
 
-def test_rainfall_adds_a_second_image_to_the_same_message(fake_api, capture_uploads):
-    fake_api({
-        '/advisory': [_record('Hudson River (Manhattan)', 16.0)],
-        '/profile': PROFILE,
-        '/query': {'features': [_feature(21, [SQUARE])]},
-        '/rainfall-samples': [
-            {'occurredOn': '2026-08-20T22:00:00', 'precipitation': 1.24},
-            {'occurredOn': '2026-08-20T21:00:00', 'precipitation': 0.31},
-        ],
-        '/sensors': [{'id': 'NR', 'name': 'North River'}],
-    })
-    dep.post_waterbody_advisory('test-channel', rainfall=True)
+def test_rainfall_chart_adds_a_second_image_to_the_same_message(fake_api, capture_uploads):
+    fake_api(ACTIVE_POST)
+    dep.post_waterbody_advisory('test-channel', plot_rainfall=True)
 
     # One message carrying both images, not one message apiece.
     assert capture_uploads['paths'][0].endswith('dep_advisory_map.png')
@@ -281,6 +282,48 @@ def test_rainfall_plot_writes_a_png(tmp_path):
     path = dep.plot_rainfall_file(rainfall, 'North River', path=str(tmp_path / 'r.png'))
     assert path == str(tmp_path / 'r.png')
     assert (tmp_path / 'r.png').stat().st_size > 0
+
+
+def _hourly(values, start=datetime(2026, 8, 17, 9, tzinfo=NY)):
+    index = pd.DatetimeIndex([start + timedelta(hours=i) for i in range(len(values))])
+    return pd.Series([float(v) for v in values], index=index)
+
+
+def test_window_hours_counts_both_endpoints():
+    # Each sample is one hour's accumulation, so 96 samples cover 96 hours even
+    # though only 95 hours separate the first from the last.
+    assert dep.window_hours(_hourly([0.0] * 96)) == 96
+    assert dep.window_hours(_hourly([0.0])) == 1
+    assert dep.window_hours(pd.Series(dtype=float)) == 0
+
+
+def test_window_hours_spans_a_reporting_gap():
+    # A gauge that drops samples still covers the same stretch of time; counting
+    # len(rainfall) would understate the period the total is drawn from.
+    full = _hourly([0.0] * 96)
+    with_gap = full.drop(full.index[10:20])
+    assert len(with_gap) == 86
+    assert dep.window_hours(with_gap) == 96
+
+
+def test_totals_name_the_period_they_cover():
+    # "over the plotted window" was wrong once the chart became opt-in: the
+    # totals post whether or not anything is plotted.
+    advisory = dep.WaterbodyAdvisory.parse(_record('Hudson River (Manhattan)', 16.0))
+    rainfall = _hourly([0.1] * 96)
+    text = dep.format_advisory_post(advisory, rainfall=rainfall, gauge_name='North River')
+    assert '*2.40 in* over the last 24 hours' in text
+    assert '9.60 in over the last 96 hours' in text
+    assert 'plotted window' not in text
+
+
+def test_short_series_reports_one_total_only():
+    # With 24 hours or less the two figures are the same number; printing both
+    # would just look like a mistake.
+    advisory = dep.WaterbodyAdvisory.parse(_record('Hudson River (Manhattan)', 16.0))
+    text = dep.format_advisory_post(advisory, rainfall=_hourly([0.1] * 12),
+                                    gauge_name='North River')
+    assert text.endswith('*1.20 in* over the last 24 hours.')
 
 
 def test_post_raises_on_unknown_waterbody(fake_api):

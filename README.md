@@ -28,12 +28,12 @@ stays quiet unless the Hudson is actually on advisory, since a standing "no
 advisory" line would be noise on most days. Pass `--post-when-clear` when
 running it by hand to see the all-clear.
 
-It can also attach the rainfall chart for the gauge the advisory is keyed to
-(`--dep-rainfall true` on the daily run, `--rainfall true` on the script). Off
-by default, since `nws_precip.py` already posts observed precipitation; it's
-worth turning on when you want the DEP gauge rather than Central Park, over
-four days rather than one, which is what explains an advisory that outlasts
-the rain. Both images post as a single Slack message.
+The post always names the 24-hour and 96-hour rainfall totals at the gauge the
+advisory is keyed to, which is what explains an advisory that outlasts the
+rain. The gauge's hourly *chart* is opt-in (`--dep-rainfall true` on the daily
+run, `--rainfall true` on the script), since `nws_precip.py` already posts an
+observed-precipitation plot daily. When it's on, both images go out as a single
+Slack message.
 
 ### The advisory map
 
