@@ -154,6 +154,32 @@ supplies its own rendering.
 Every script accepts `--pdb` (break on entry) and `--postmortem` (drop into
 pdb on an exception).
 
+## The website conditions page
+
+`web_export.py` renders the same data as JSON plus plot PNGs, for the conditions
+page on [nykayakpolo.org](https://nykayakpolo.org). The website's deploy
+workflow installs this package, runs the module, and lets Hugo templates style
+the result -- nothing generated is committed to the site repo.
+
+```bash
+python -m nykp_conditions.web_export \
+    --out data/conditions.json \
+    --img-dir static/img/conditions \
+    --img-url /img/conditions
+```
+
+`--img-dir` is where the PNGs are written; `--img-url` is the path they'll be
+served at, which is what gets recorded in the JSON. Omit `--img-dir` for a
+text-only document.
+
+**Failure handling differs from the Slack post on purpose.** There, a failed
+section still exits nonzero so the run goes red and the failure is visible.
+Here a nonzero exit would abort the site deploy, so an upstream outage would
+block an unrelated content change from publishing. Instead each failed section
+is written as `{"status": "unavailable", "error": ...}` for the page to render
+honestly, reported as a GitHub Actions `::warning::` annotation, and the run
+still exits 0. `unavailable` at the top level lists any sections that failed.
+
 ## Tests
 
 ```bash
@@ -178,6 +204,7 @@ the version the daily job actually uses.
 ```
 nykp_conditions/
   post_conditions.py   Entry point for the daily post
+  web_export.py        JSON + images for the website conditions page
   noaa_currents.py     Tidal current predictions
   water_temps.py       Water temperature range (plot optional)
   nws_forecast.py      NWS meteogram + text forecast
@@ -203,3 +230,9 @@ tests/                 pytest suite
 - The NWS forecast is scraped from HTML, so it's the most likely thing to
   break if the page layout changes. It raises rather than posting something
   wrong.
+- The DEP dashboard's `/api/advisory` intermittently answers **200 with an empty
+  list**, then repopulates over about a minute. Observed 2026-08-23: seven
+  straight empty responses, then 12, 36, and 45 records on successive polls. So
+  the DEP section can fail or -- worse -- report a citywide count off a partial
+  list ("3 of 12 waterbodies" instead of "of 45"). Worth a retry-until-stable
+  before trusting `active_count`/`total_count`.

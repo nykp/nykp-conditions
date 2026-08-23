@@ -404,6 +404,15 @@ def post_waterbody_advisory(
     advisories = get_advisories()
     advisory = find_advisory(advisories, waterbody=waterbody)
     if advisory is None:
+        # The dashboard intermittently answers /api/advisory with an empty
+        # list while still returning 200. That's an upstream hiccup, not the
+        # waterbody being renamed, and the two need different messages -- the
+        # old one reported "Known: " with nothing after it.
+        if not advisories:
+            raise RuntimeError(
+                'DEP dashboard returned no advisory records (it answers with an '
+                'empty list intermittently); nothing to report this run.'
+            )
         known = ', '.join(sorted(a.waterbody for a in advisories))
         raise ValueError(f"No waterbody named {waterbody!r} on the DEP dashboard. Known: {known}")
 
