@@ -5,7 +5,7 @@ import os
 import pandas as pd
 import pytest
 
-import nws_precip as npr
+import nykp_conditions.nws_precip as npr
 
 
 def obs(ts: str, mm_1h=None, mm_3h=None, mm_6h=None, qc='C'):

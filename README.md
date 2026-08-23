@@ -102,39 +102,54 @@ Requires **Python 3.11+**; the daily job and local development both run on
 3.13. Timezone handling uses the stdlib `zoneinfo`, so there's no `pytz`
 dependency.
 
-> **Note:** the modules import each other flatly (`from utils.slack import …`),
-> so scripts must be run **from inside `nykp_conditions/`**. Running
-> `python nykp_conditions/post_conditions.py` from the repo root will fail on
-> the imports.
+`nykp_conditions` is a normal importable package, so run the modules with
+`python -m` from anywhere — no `cd` into the package first.
 
 ```bash
 pip install -e '.[dev]'
-cd nykp_conditions
 
 # Everything, to the test channel (the default)
-python post_conditions.py
+python -m nykp_conditions.post_conditions
 
 # A specific channel, two days of currents
-python post_conditions.py --channel hudson-conditions --days 2
+python -m nykp_conditions.post_conditions --channel hudson-conditions --days 2
 
 # Skip sections you don't want while iterating
-python post_conditions.py --currents false --forecast false
+python -m nykp_conditions.post_conditions --currents false --forecast false
 
 # Attach the water temperature timeseries plot (off by default)
-python post_conditions.py --water-temp-plot true
+python -m nykp_conditions.post_conditions --water-temp-plot true
 ```
 
 Each source module is also runnable on its own:
 
 ```bash
-cd nykp_conditions
-python noaa_currents.py --station NYH1928_12 --range 1w
-python water_temps.py --channel test-python-api --plot true
-python nws_forecast.py --keep          # Leaves the downloaded plot in cache/
-python nws_precip.py --station KNYC --hours 24
-python notify_nyc.py --days 7
-python dep_advisory.py --rainfall true      # Adds the gauge rainfall chart
+python -m nykp_conditions.noaa_currents --station NYH1928_12 --range 1w
+python -m nykp_conditions.water_temps --channel test-python-api --plot true
+python -m nykp_conditions.nws_forecast --keep     # Leaves the plot in cache/
+python -m nykp_conditions.nws_precip --station KNYC --hours 24
+python -m nykp_conditions.notify_nyc --days 7
+python -m nykp_conditions.dep_advisory --rainfall true   # Adds the rainfall chart
 ```
+
+### Using it as a library
+
+The fetch and plot functions are independent of Slack, so another project can
+install this package straight from GitHub and reuse them:
+
+```bash
+pip install git+https://github.com/nykp/noaa-currents
+```
+
+```python
+from nykp_conditions.water_temps import get_water_temps, temp_range
+from nykp_conditions.dep_advisory import get_advisories, find_advisory
+```
+
+Each module layers as **fetch → format → post**: `get_*`/`retrieve_*` return
+data, `format_*_post` renders Slack markup, `plot_*_file` writes a PNG, and
+`post_*` does the Slack call. A non-Slack consumer uses the first and third and
+supplies its own rendering.
 
 Every script accepts `--pdb` (break on entry) and `--postmortem` (drop into
 pdb on an exception).
@@ -151,8 +166,8 @@ stubbed. `test_post_conditions.py` stubs every section poster through an
 autouse fixture: a section left unstubbed there would reach the real upstream
 sources and post to a real Slack channel.
 
-`tests/conftest.py` puts `nykp_conditions/` on `sys.path` so the tests import
-the modules the same flat way the scripts do.
+The tests import the package by its full path (`import
+nykp_conditions.noaa_currents as nc`), the same way any other consumer would.
 
 CI runs them on every push and pull request against Python 3.11 and 3.13
 (`.github/workflows/tests.yml`) — the floor declared in `pyproject.toml` and

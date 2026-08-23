@@ -1,7 +1,7 @@
 import pytest
 from slack_sdk.errors import SlackApiError
 
-from utils import slack
+from nykp_conditions.utils import slack
 
 
 class FakeResponse(dict):

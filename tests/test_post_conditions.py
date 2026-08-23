@@ -1,6 +1,6 @@
 import pytest
 
-import post_conditions as pc
+import nykp_conditions.post_conditions as pc
 
 # Every function `main` calls to post a section, and the name it records.
 # Anything left unstubbed here would reach the real upstream sources and post

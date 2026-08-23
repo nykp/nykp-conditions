@@ -9,8 +9,8 @@ from zoneinfo import ZoneInfo
 import feedparser
 import pendulum
 
-from utils.scripts import try_main
-from utils.slack import NykpSlackChannels, post_text_attachment
+from .utils.scripts import try_main
+from .utils.slack import NykpSlackChannels, post_text_attachment
 
 
 NOTIFY_NYC_URL = 'https://feeds.everbridge.net/feeds/453003085617722/rss/rss.xml'

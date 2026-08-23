@@ -17,9 +17,9 @@ from urllib.request import urlopen, urlretrieve
 
 from bs4 import BeautifulSoup, Tag
 
-from utils.geo import LatLon
-from utils.scripts import try_main
-from utils.slack import NykpSlackChannels, post_message, post_file
+from .utils.geo import LatLon
+from .utils.scripts import try_main
+from .utils.slack import NykpSlackChannels, post_message, post_file
 
 URL_BASE = 'https://forecast.weather.gov/'
 DEFAULT_LAT_LON = LatLon(40.7143, -74.006)

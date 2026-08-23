@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 import pytest
 from bs4 import BeautifulSoup
 
-import nws_forecast as nf
-from utils.geo import LatLon
+import nykp_conditions.nws_forecast as nf
+from nykp_conditions.utils.geo import LatLon
 
 
 FORECAST_PAGE = """

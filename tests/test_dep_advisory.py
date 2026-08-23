@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from zoneinfo import ZoneInfo
 
-import dep_advisory as dep
+import nykp_conditions.dep_advisory as dep
 
 NY = ZoneInfo('America/New_York')
 

@@ -13,14 +13,14 @@ import traceback
 from argparse import ArgumentParser
 from collections.abc import Callable
 
-from dep_advisory import post_waterbody_advisory
-from noaa_currents import post_currents
-from notify_nyc import post_waterbody_advisories
-from nws_forecast import post_forecast
-from nws_precip import post_observed_precip
-from utils.scripts import str2bool, try_main
-from utils.slack import NykpSlackChannels
-from water_temps import post_water_temps
+from .dep_advisory import post_waterbody_advisory
+from .noaa_currents import post_currents
+from .notify_nyc import post_waterbody_advisories
+from .nws_forecast import post_forecast
+from .nws_precip import post_observed_precip
+from .utils.scripts import str2bool, try_main
+from .utils.slack import NykpSlackChannels
+from .water_temps import post_water_temps
 
 
 default_config = {
