@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from urllib.parse import urlencode
 
 import numpy as np
 import pandas as pd
@@ -37,10 +38,27 @@ SQUARE = [[-74.0, 40.7], [-74.0, 40.8], [-73.9, 40.8], [-73.9, 40.7], [-74.0, 40
 def fake_api(monkeypatch):
     """Stub every HTTP call so nothing here touches the network."""
     def _install(responses: dict):
+        responses = dict(responses)
+        # `get_complete_advisories` checks the advisory list against the map
+        # layer's waterbody count. Default that count to however many records
+        # this fake serves, so a test about posting doesn't wander into the
+        # warm-up retry path -- and its sleeps -- to get there.
+        if not any('profile' in key for key in responses):
+            responses['/api/profile'] = PROFILE
+        if not any('returnCountOnly' in key for key in responses):
+            served = next((v for k, v in responses.items()
+                           if 'advisory' in k and isinstance(v, list)), None)
+            if served is not None:
+                responses['returnCountOnly'] = {'count': len(served)}
+
         def _get_json(url, **params):
-            for key, payload in responses.items():
-                if key in url:
-                    return payload
+            # Match against the query string too, so the count request is
+            # distinguishable from the polygon request -- both hit `/query`.
+            target = f"{url}?{urlencode(params)}" if params else url
+            # Longest key first, so a specific key wins over a general one.
+            for key in sorted(responses, key=len, reverse=True):
+                if key in target:
+                    return responses[key]
             raise AssertionError(f"unexpected request to {url} {params}")
         monkeypatch.setattr(dep, '_get_json', _get_json)
     return _install
@@ -330,3 +348,104 @@ def test_post_raises_on_unknown_waterbody(fake_api):
     fake_api({'/advisory': [_record('Hudson River (Manhattan)', 0.0)]})
     with pytest.raises(ValueError, match='No waterbody named'):
         dep.post_waterbody_advisory('test-channel', waterbody='Lake Placid')
+
+
+"""----------------------------------------------------------------------------
+Completeness: the dashboard warms up in stages
+----------------------------------------------------------------------------"""
+
+
+def _advisories(n, name='Hudson River (Manhattan)'):
+    """n advisory records, the first named `name`."""
+    return [dep.WaterbodyAdvisory.parse(_record(name if i == 0 else f'Water {i}', 0.0, wb_id=i))
+            for i in range(n)]
+
+
+def test_waterbody_count_reads_the_layer(fake_api):
+    fake_api({'/api/profile': PROFILE, 'returnCountOnly': {'count': 45}})
+    assert dep.get_waterbody_count() == 45
+
+
+def test_waterbody_count_rejects_a_response_without_one(fake_api):
+    fake_api({'/api/profile': PROFILE, 'returnCountOnly': {'error': 'nope'}})
+    with pytest.raises(RuntimeError, match='no count'):
+        dep.get_waterbody_count()
+
+
+def test_complete_advisories_refetches_until_the_list_is_whole(monkeypatch):
+    """Observed 2026-08-23: empty, then 12, then 36, then 45 records. Taking
+    the first answer would report a citywide count off a partial list."""
+    responses = [[], _advisories(12), _advisories(36), _advisories(45)]
+    monkeypatch.setattr(dep, 'get_waterbody_count', lambda *a, **k: 45)
+    monkeypatch.setattr(dep, 'get_advisories', lambda **k: responses.pop(0))
+
+    result = dep.get_complete_advisories(sleep=lambda _: None)
+
+    assert len(result) == 45
+    assert responses == []  # Took all four attempts
+
+
+def test_complete_advisories_returns_the_first_whole_response(monkeypatch):
+    calls = []
+    monkeypatch.setattr(dep, 'get_waterbody_count', lambda *a, **k: 45)
+
+    def _get(**kwargs):
+        calls.append(1)
+        return _advisories(45)
+
+    monkeypatch.setattr(dep, 'get_advisories', _get)
+    assert len(dep.get_complete_advisories(sleep=lambda _: None)) == 45
+    assert len(calls) == 1  # No needless waiting when the first read is good
+
+
+def test_complete_advisories_accepts_more_records_than_expected(monkeypatch):
+    """DEP can add a waterbody before the map layer catches up; that's not a
+    partial response."""
+    monkeypatch.setattr(dep, 'get_waterbody_count', lambda *a, **k: 45)
+    monkeypatch.setattr(dep, 'get_advisories', lambda **k: _advisories(46))
+    assert len(dep.get_complete_advisories(sleep=lambda _: None)) == 46
+
+
+def test_complete_advisories_waits_between_attempts(monkeypatch):
+    slept = []
+    responses = [[], _advisories(45)]
+    monkeypatch.setattr(dep, 'get_waterbody_count', lambda *a, **k: 45)
+    monkeypatch.setattr(dep, 'get_advisories', lambda **k: responses.pop(0))
+
+    dep.get_complete_advisories(delays=(7, 11), sleep=slept.append)
+
+    assert slept == [7]  # Waited once, before the retry that succeeded
+
+
+def test_complete_advisories_raises_rather_than_returning_a_partial_list(monkeypatch):
+    """A short list is worse than no list: it looks fine and yields a wrong
+    count. Callers need the failure so the section is marked unavailable."""
+    monkeypatch.setattr(dep, 'get_waterbody_count', lambda *a, **k: 45)
+    monkeypatch.setattr(dep, 'get_advisories', lambda **k: _advisories(12))
+
+    with pytest.raises(RuntimeError, match='never returned a complete'):
+        dep.get_complete_advisories(delays=(1, 1), sleep=lambda _: None)
+
+
+def test_complete_advisories_falls_back_to_stability_without_a_count(monkeypatch):
+    """If the layer count can't be read we can't verify wholeness, so accept
+    the first non-empty reading that repeats rather than trusting one read."""
+    responses = [[], _advisories(30), _advisories(45), _advisories(45)]
+    monkeypatch.setattr(dep, 'get_waterbody_count',
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError('arcgis down')))
+    monkeypatch.setattr(dep, 'get_advisories', lambda **k: responses.pop(0))
+
+    result = dep.get_complete_advisories(sleep=lambda _: None)
+
+    assert len(result) == 45  # Two 45s in a row
+    assert responses == []
+
+
+def test_complete_advisories_stability_ignores_repeated_empties(monkeypatch):
+    """Two empty responses in a row are not a stable reading."""
+    responses = [[], [], _advisories(45), _advisories(45)]
+    monkeypatch.setattr(dep, 'get_waterbody_count',
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError('down')))
+    monkeypatch.setattr(dep, 'get_advisories', lambda **k: responses.pop(0))
+
+    assert len(dep.get_complete_advisories(sleep=lambda _: None)) == 45

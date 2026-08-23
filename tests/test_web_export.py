@@ -184,23 +184,26 @@ def _advisory(name='Hudson River (Manhattan)', duration=0.0, gauge=None):
     )
 
 
-def test_build_dep_advisory_distinguishes_an_empty_dashboard(monkeypatch):
-    """The dashboard answers 200 with [] intermittently. That's an upstream
-    hiccup, not our waterbody being renamed, and the message has to say so --
-    the old one read 'Known: ' with nothing after it."""
-    monkeypatch.setattr(we, 'get_advisories', lambda *a, **k: [])
-    with pytest.raises(RuntimeError, match='no advisory records'):
-        we.build_dep_advisory()
+def test_dep_advisory_section_goes_unavailable_when_the_dashboard_never_completes(monkeypatch):
+    """`get_complete_advisories` raises rather than handing back a partial
+    list, and that has to degrade to an unavailable section, not a wrong one."""
+    def never_completes(*a, **k):
+        raise RuntimeError('DEP dashboard never returned a complete advisory list')
+
+    monkeypatch.setattr(we, 'get_complete_advisories', never_completes)
+    sections = we.collect([('dep_advisory', we.build_dep_advisory)])
+    assert sections['dep_advisory']['status'] == we.UNAVAILABLE
+    assert 'complete advisory list' in sections['dep_advisory']['error']
 
 
 def test_build_dep_advisory_names_the_known_waterbodies_when_ours_is_missing(monkeypatch):
-    monkeypatch.setattr(we, 'get_advisories', lambda *a, **k: [_advisory(name='Gowanus Canal')])
+    monkeypatch.setattr(we, 'get_complete_advisories', lambda *a, **k: [_advisory(name='Gowanus Canal')])
     with pytest.raises(RuntimeError, match='Gowanus Canal'):
         we.build_dep_advisory()
 
 
 def test_build_dep_advisory_reports_a_clear_waterbody(monkeypatch):
-    monkeypatch.setattr(we, 'get_advisories', lambda *a, **k: [_advisory(duration=0.0)])
+    monkeypatch.setattr(we, 'get_complete_advisories', lambda *a, **k: [_advisory(duration=0.0)])
     section = we.build_dep_advisory()
     assert section['active'] is False
     assert 'until' not in section  # Nothing to count down to
@@ -208,7 +211,7 @@ def test_build_dep_advisory_reports_a_clear_waterbody(monkeypatch):
 
 
 def test_build_dep_advisory_reports_an_active_advisory(monkeypatch):
-    monkeypatch.setattr(we, 'get_advisories', lambda *a, **k: [_advisory(duration=16.0)])
+    monkeypatch.setattr(we, 'get_complete_advisories', lambda *a, **k: [_advisory(duration=16.0)])
     section = we.build_dep_advisory()
     assert section['active'] is True
     assert section['hours_remaining'] == 16
@@ -224,7 +227,7 @@ def test_build_dep_advisory_includes_rainfall_even_when_clear(monkeypatch):
         index=pd.DatetimeIndex([datetime(2026, 8, 23, 6, tzinfo=NY),
                                 datetime(2026, 8, 23, 7, tzinfo=NY)], name='hour'),
     )
-    monkeypatch.setattr(we, 'get_advisories', lambda *a, **k: [_advisory(gauge='NR')])
+    monkeypatch.setattr(we, 'get_complete_advisories', lambda *a, **k: [_advisory(gauge='NR')])
     monkeypatch.setattr(we, 'get_rainfall', lambda *a, **k: rainfall)
     monkeypatch.setattr(we, 'get_gauge_names', lambda *a, **k: {'NR': 'North River'})
 
@@ -269,7 +272,7 @@ def test_written_json_is_serializable_end_to_end(monkeypatch, tmp_path):
     monkeypatch.setattr(we, 'get_observed_precip', lambda *a, **k: _precip())
     monkeypatch.setattr(we, 'get_forecast_text', lambda *a, **k: ForecastText('t', 'Tonight: x.'))
     monkeypatch.setattr(we, 'get_waterbody_advisories', lambda *a, **k: [])
-    monkeypatch.setattr(we, 'get_advisories', lambda *a, **k: [_advisory(duration=16.0)])
+    monkeypatch.setattr(we, 'get_complete_advisories', lambda *a, **k: [_advisory(duration=16.0)])
 
     conditions = we.build_conditions()
     assert conditions['unavailable'] == []

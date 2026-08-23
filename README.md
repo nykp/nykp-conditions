@@ -230,9 +230,19 @@ tests/                 pytest suite
 - The NWS forecast is scraped from HTML, so it's the most likely thing to
   break if the page layout changes. It raises rather than posting something
   wrong.
-- The DEP dashboard's `/api/advisory` intermittently answers **200 with an empty
-  list**, then repopulates over about a minute. Observed 2026-08-23: seven
-  straight empty responses, then 12, 36, and 45 records on successive polls. So
-  the DEP section can fail or -- worse -- report a citywide count off a partial
-  list ("3 of 12 waterbodies" instead of "of 45"). Worth a retry-until-stable
-  before trusting `active_count`/`total_count`.
+- The DEP dashboard's `/api/advisory` intermittently answers **200 with a
+  partial or empty list** while the app warms up, then fills in over a minute
+  or two. Polled every 10s on 2026-08-23: seven straight empty responses, then
+  12, 36, and 45 records. The empty case fails loudly, but a *partial* one is
+  worse -- it looks fine and yields a citywide count off a short list ("3 of 12
+  waterbodies on advisory" instead of "of 45"), and may not even contain the
+  waterbody being asked about.
+
+  `get_complete_advisories` handles this: it reads the expected waterbody count
+  from the ArcGIS map layer (`returnCountOnly`, a different host, so a cold
+  dashboard can't skew both the list and the check on it) and refetches until
+  the list is whole, backing off 5s/15s/30s/60s/60s. If that count can't be
+  read it falls back to accepting the first non-empty response that repeats.
+  Failing to complete raises, so the section is marked unavailable rather than
+  published with a wrong number. Both the Slack post and the web export go
+  through it; a healthy dashboard costs about a second.

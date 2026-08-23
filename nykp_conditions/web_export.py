@@ -36,7 +36,7 @@ from .dep_advisory import (
     DASHBOARD_URL,
     HOME_WATERBODY,
     find_advisory,
-    get_advisories,
+    get_complete_advisories,
     get_gauge_names,
     get_layer_url,
     get_rainfall,
@@ -244,11 +244,9 @@ def build_notify_advisories(days: int = 1) -> dict:
 def build_dep_advisory(img_dir: str | None = None, img_url: str | None = None,
                        waterbody: str = HOME_WATERBODY, rainfall_plot: bool = False) -> dict:
     """DEP advisory status for our stretch of the Hudson, plus the citywide map."""
-    advisories = get_advisories()
-    if not advisories:
-        # Seen in the wild: 200 with an empty list, minutes after a full
-        # response. Upstream hiccup rather than a renamed waterbody.
-        raise RuntimeError('DEP dashboard returned no advisory records')
+    # Retries past the dashboard's warm-up: a partial list would put a wrong
+    # citywide count on the page rather than failing visibly.
+    advisories = get_complete_advisories()
     advisory = find_advisory(advisories, waterbody=waterbody)
     if advisory is None:
         known = ', '.join(sorted(a.waterbody for a in advisories))
