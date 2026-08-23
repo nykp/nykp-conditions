@@ -43,9 +43,9 @@ from matplotlib.collections import PatchCollection
 from matplotlib.dates import DateFormatter
 from matplotlib.patches import Patch, Polygon
 
-from utils.format import format_hour
-from utils.scripts import str2bool, try_main
-from utils.slack import NykpSlackChannels, post_files, post_message
+from .utils.format import format_hour
+from .utils.scripts import str2bool, try_main
+from .utils.slack import NykpSlackChannels, post_files, post_message
 
 DASHBOARD_URL = 'https://nycwaterbodyadvisory.azurewebsites.net/'
 API_BASE = 'https://nycwaterbodyadvisory.azurewebsites.net/api'

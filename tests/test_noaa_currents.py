@@ -4,7 +4,7 @@ import pandas as pd
 import pendulum
 import pytest
 
-import noaa_currents as nc
+import nykp_conditions.noaa_currents as nc
 
 
 @pytest.mark.parametrize('value, expected', [

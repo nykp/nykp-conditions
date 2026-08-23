@@ -9,11 +9,11 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.dates import DateFormatter
 
-from utils import secrets
-from utils.data import rename_cols
-from utils.plot import DateTimeFormats, format_time_axis
-from utils.scripts import optional, str2bool, try_main
-from utils.units import knots_to_mph
+from nykp_conditions.utils import secrets
+from nykp_conditions.utils.data import rename_cols
+from nykp_conditions.utils.plot import DateTimeFormats, format_time_axis
+from nykp_conditions.utils.scripts import optional, str2bool, try_main
+from nykp_conditions.utils.units import knots_to_mph
 
 
 @pytest.mark.parametrize('value, expected', [

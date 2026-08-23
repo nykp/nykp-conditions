@@ -14,10 +14,10 @@ from urllib.request import urlretrieve
 import pandas as pd
 import pendulum
 
-from utils.data import rename_cols
-from utils.scripts import try_main
-from utils.slack import NykpSlackChannels, post_message, post_file
-from utils.units import knots_to_mph
+from .utils.data import rename_cols
+from .utils.scripts import try_main
+from .utils.slack import NykpSlackChannels, post_message, post_file
+from .utils.units import knots_to_mph
 
 CURRENTS_CSV_URL_BASE = 'https://api.tidesandcurrents.noaa.gov/dpapi/prod/webapi/currentPredictionsDownload'
 CURRENTS_CSV_DATE_FMT = 'YYYY-MM-DD'

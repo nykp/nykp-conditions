@@ -36,9 +36,9 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.dates import DateFormatter
 
-from utils.format import format_hour
-from utils.scripts import try_main
-from utils.slack import NykpSlackChannels, post_file, post_message
+from .utils.format import format_hour
+from .utils.scripts import try_main
+from .utils.slack import NykpSlackChannels, post_file, post_message
 
 OBSERVATIONS_URL_BASE = 'https://api.weather.gov/stations/{station}/observations'
 STATION_PAGE_TEMPLATE = 'https://www.weather.gov/wrh/timeseries?site={station}'

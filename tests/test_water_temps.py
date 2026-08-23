@@ -5,7 +5,7 @@ import os
 import pandas as pd
 import pytest
 
-import water_temps as wt
+import nykp_conditions.water_temps as wt
 
 
 PAYLOAD = {

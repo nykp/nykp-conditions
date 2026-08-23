@@ -18,10 +18,10 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.dates import DateFormatter
 
-from utils.format import format_hour
-from utils.plot import DateTimeFormats
-from utils.scripts import str2bool, try_main
-from utils.slack import NykpSlackChannels, post_file, post_message
+from .utils.format import format_hour
+from .utils.plot import DateTimeFormats
+from .utils.scripts import str2bool, try_main
+from .utils.slack import NykpSlackChannels, post_file, post_message
 
 WATER_TEMPS_URL_BASE = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter'
 OBSERVATIONS_URL_TEMPLATE = 'https://tidesandcurrents.noaa.gov/stationhome.html?id={id}#obs'

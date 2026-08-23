@@ -35,8 +35,7 @@ jobs:
         run: pip install .
 
       - name: Post conditions to Slack
-        working-directory: nykp_conditions
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           MPLBACKEND: Agg
-        run: python post_conditions.py --channel "${{ github.event.inputs.channel || 'hudson-conditions' }}"
+        run: python -m nykp_conditions.post_conditions --channel "${{ github.event.inputs.channel || 'hudson-conditions' }}"

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import pytest
 from zoneinfo import ZoneInfo
 
-import notify_nyc as nn
+import nykp_conditions.notify_nyc as nn
 
 
 def test_find_links_picks_out_urls():
