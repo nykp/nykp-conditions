@@ -20,15 +20,20 @@ Endpoints, all unauthenticated:
 * `/api/rainfall-samples?...&sensorId=NR` -- hourly rainfall, inches, newest
   first. `/api/sensors` -- the 14 gauges.
 
-Two traps: `occurredOn` is naive **local** time, not UTC; and
+Three traps: `occurredOn` is naive **local** time, not UTC;
 `accumulatedLast24Hours` on `/api/sensors` read 0.0 for every gauge on
-2026-08-21, hours after North River recorded 2.55 in. Sum the samples instead.
+2026-08-21, hours after North River recorded 2.55 in (sum the samples
+instead); and `/api/advisory` answers 200 with a **partial or empty** list
+while the app warms up, so a response has to be checked for completeness
+before its counts mean anything -- see `get_complete_advisories`.
 """
 
 import json
 import os
 import tempfile
+import time
 from argparse import ArgumentParser
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from urllib.parse import urlencode, urljoin
@@ -61,6 +66,10 @@ WQ = 'WQ'
 
 # The dashboard's own chart shows four days at hourly resolution.
 RAINFALL_SAMPLE_LIMIT = 96
+
+# How long to keep refetching a partial advisory list while the app warms up.
+# Totals about three minutes, which the daily 8:30am run can absorb.
+ADVISORY_RETRY_DELAYS = (5, 15, 30, 60, 60)
 
 # ~20 m, well under the ~80 m a pixel covers at the size we plot.
 GEOMETRY_TOLERANCE = 0.0002
@@ -139,6 +148,78 @@ def get_advisories(advisory_type: str = WQ, tz: str = DEFAULT_TIMEZONE) -> list[
     """Current advisory status for every waterbody on the dashboard."""
     records = _get_json(f'{API_BASE}/advisory', advisoryType=advisory_type)
     return [WaterbodyAdvisory.parse(record, tz=tz) for record in records]
+
+
+def get_waterbody_count(layer_url: str | None = None) -> int:
+    """How many waterbodies the dashboard covers.
+
+    A complete `/api/advisory` response carries one record per waterbody, so
+    this is what tells us whether a response is whole. It's read from the
+    ArcGIS layer rather than the dashboard's own API -- a different host, so a
+    cold dashboard can't skew the count and the reading of it the same way.
+    """
+    if layer_url is None:
+        layer_url = get_layer_url()
+    result = _get_json(f"{layer_url.rstrip('/')}/query",
+                       where='1=1', returnCountOnly='true', f='json')
+    try:
+        return int(result['count'])
+    except (KeyError, TypeError, ValueError):
+        raise RuntimeError(f'Waterbody layer returned no count: {result!r}') from None
+
+
+def get_complete_advisories(
+        advisory_type: str = WQ,
+        tz: str = DEFAULT_TIMEZONE,
+        delays: Sequence[float] = ADVISORY_RETRY_DELAYS,
+        sleep: Callable[[float], None] = time.sleep,
+) -> list[WaterbodyAdvisory]:
+    """Advisory status for every waterbody, retried until the list is complete.
+
+    `/api/advisory` answers 200 with a partial or empty list while the app is
+    warming up -- observed going empty, then 12, 36, and 45 records over about
+    a minute and a half. An empty response fails loudly, but a *partial* one is
+    worse: it looks fine and yields a citywide count off a short list ("3 of 12
+    waterbodies on advisory" instead of "of 45"), and it may not even contain
+    the waterbody we care about.
+
+    So the response is checked against `get_waterbody_count` and refetched
+    until it's whole. If that count can't be read, fall back to accepting the
+    first non-empty response that repeats -- weaker, but better than trusting a
+    single short read.
+    """
+    try:
+        expected = get_waterbody_count()
+    except Exception as exc:
+        print(f"Could not read the waterbody count ({exc}); "
+              f"falling back to a stability check.")
+        expected = None
+
+    previous_count = None
+    for attempt, delay in enumerate((0.0,) + tuple(delays)):
+        if delay:
+            sleep(delay)
+        advisories = get_advisories(advisory_type=advisory_type, tz=tz)
+        count = len(advisories)
+
+        if expected is not None:
+            # More than expected is fine: DEP can add a waterbody before the
+            # map layer catches up. Fewer means the response is still filling.
+            if count >= expected:
+                return advisories
+        elif count and count == previous_count:
+            return advisories
+
+        target = expected if expected is not None else 'a repeat reading'
+        print(f"DEP dashboard returned {count} advisories (want {target}); "
+              f"attempt {attempt + 1} of {len(delays) + 1}")
+        previous_count = count
+
+    raise RuntimeError(
+        f"DEP dashboard never returned a complete advisory list "
+        f"(last saw {previous_count}, expected {expected}) after "
+        f"{len(delays) + 1} attempts over {sum(delays):.0f}s"
+    )
 
 
 def find_advisory(
@@ -401,7 +482,9 @@ def post_waterbody_advisory(
     attaches the gauge chart, off by default since `nws_precip.py` already
     posts precipitation.
     """
-    advisories = get_advisories()
+    # Retries past the warm-up, so the citywide counts below are off a whole
+    # list rather than a partial one.
+    advisories = get_complete_advisories()
     advisory = find_advisory(advisories, waterbody=waterbody)
     if advisory is None:
         known = ', '.join(sorted(a.waterbody for a in advisories))
