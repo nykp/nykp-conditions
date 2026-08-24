@@ -22,6 +22,12 @@ dependencies = [
     "slack-sdk",
 ]
 
+[project.urls]
+# Recorded in the package metadata so an installed copy points back here --
+# worth having now the repo has been renamed once.
+Homepage = "https://github.com/nykp/nykp-conditions"
+Repository = "https://github.com/nykp/nykp-conditions"
+
 [project.optional-dependencies]
 dev = ["pytest"]
 

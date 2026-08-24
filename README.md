@@ -58,7 +58,7 @@ The daily run is started externally by a [cron-job.org](https://cron-job.org)
 job at 8:30am `America/New_York`, which POSTs to the workflow dispatch API:
 
 ```
-POST https://api.github.com/repos/nykp/noaa-currents/actions/workflows/daily-conditions.yml/dispatches
+POST https://api.github.com/repos/nykp/nykp-conditions/actions/workflows/daily-conditions.yml/dispatches
 {"ref": "main", "inputs": {"channel": "hudson-conditions"}}
 ```
 
@@ -156,7 +156,7 @@ The fetch and plot functions are independent of Slack, so another project can
 install this package straight from GitHub and reuse them:
 
 ```bash
-pip install git+https://github.com/nykp/noaa-currents
+pip install git+https://github.com/nykp/nykp-conditions
 ```
 
 ```python
