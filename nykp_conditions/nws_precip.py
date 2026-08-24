@@ -44,7 +44,7 @@ OBSERVATIONS_URL_BASE = 'https://api.weather.gov/stations/{station}/observations
 STATION_PAGE_TEMPLATE = 'https://www.weather.gov/wrh/timeseries?site={station}'
 # api.weather.gov asks callers to identify themselves; unattended requests from
 # a generic agent are the ones they rate-limit first.
-USER_AGENT = 'nykp-conditions (https://github.com/nykp/noaa-currents)'
+USER_AGENT = 'nykp-conditions (https://github.com/nykp/nykp-conditions)'
 
 DEFAULT_STATION = 'KNYC'  # Central Park
 DEFAULT_STATION_NAME = 'Central Park'

@@ -54,7 +54,7 @@ from .utils.slack import NykpSlackChannels, post_files, post_message
 
 DASHBOARD_URL = 'https://nycwaterbodyadvisory.azurewebsites.net/'
 API_BASE = 'https://nycwaterbodyadvisory.azurewebsites.net/api'
-USER_AGENT = 'nykp-conditions (https://github.com/nykp/noaa-currents)'
+USER_AGENT = 'nykp-conditions (https://github.com/nykp/nykp-conditions)'
 
 DEFAULT_TIMEZONE = 'America/New_York'
 
