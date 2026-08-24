@@ -25,6 +25,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest"]
 
+[project.scripts]
+nykp-conditions = "nykp_conditions.cli:main"
+
 [tool.setuptools]
 packages = ["nykp_conditions", "nykp_conditions.utils"]
 

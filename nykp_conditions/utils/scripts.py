@@ -3,7 +3,7 @@
 import pdb
 import traceback
 from argparse import ArgumentParser
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 
 def str2bool(s: bool | str | None, ignore_errors=False) -> bool | str | None:
@@ -39,11 +39,16 @@ def optional(type_: type):
     return _converter
 
 
-def try_main(main: Callable, arg_parser: ArgumentParser):
-    """Parse args and run `main`, with optional pdb entry and post-mortem."""
+def try_main(main: Callable, arg_parser: ArgumentParser, argv: Sequence[str] | None = None):
+    """Parse args and run `main`, with optional pdb entry and post-mortem.
+
+    `argv` defaults to the process arguments. The `nykp-conditions` dispatcher
+    passes the arguments left after the subcommand, so each module keeps
+    parsing its own CLI whether it's run through the dispatcher or directly.
+    """
     arg_parser.add_argument('--pdb', action='store_true')
     arg_parser.add_argument('--postmortem', action='store_true')
-    args = arg_parser.parse_args()
+    args = arg_parser.parse_args(argv)
 
     if args.pdb:
         pdb.set_trace()
