@@ -38,4 +38,4 @@ jobs:
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           MPLBACKEND: Agg
-        run: python -m nykp_conditions.post_conditions --channel "${{ github.event.inputs.channel || 'hudson-conditions' }}"
+        run: nykp-conditions post --channel "${{ github.event.inputs.channel || 'hudson-conditions' }}"

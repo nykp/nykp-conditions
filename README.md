@@ -102,35 +102,53 @@ Requires **Python 3.11+**; the daily job and local development both run on
 3.13. Timezone handling uses the stdlib `zoneinfo`, so there's no `pytz`
 dependency.
 
-`nykp_conditions` is a normal importable package, so run the modules with
-`python -m` from anywhere — no `cd` into the package first.
+Installing the package puts a `nykp-conditions` command on the PATH, with one
+subcommand per source. Run it from anywhere — no `cd` into the package first.
 
 ```bash
 pip install -e '.[dev]'
 
-# Everything, to the test channel (the default)
-python -m nykp_conditions.post_conditions
-
-# A specific channel, two days of currents
-python -m nykp_conditions.post_conditions --channel hudson-conditions --days 2
-
-# Skip sections you don't want while iterating
-python -m nykp_conditions.post_conditions --currents false --forecast false
-
-# Attach the water temperature timeseries plot (off by default)
-python -m nykp_conditions.post_conditions --water-temp-plot true
+nykp-conditions                 # Lists the commands
+nykp-conditions post --help     # A command's own options
 ```
 
-Each source module is also runnable on its own:
+| Command | What it does |
+| --- | --- |
+| `post` | Post the full conditions summary to Slack |
+| `web-export` | Write the conditions as JSON + plots for the website |
+| `currents` | Tidal current predictions |
+| `water-temps` | Water temperature range |
+| `forecast` | NWS text forecast and meteogram |
+| `precip` | Observed precipitation |
+| `notify-nyc` | Waterbody advisories announced through Notify NYC |
+| `dep-advisory` | DEP waterbody advisory status and citywide map |
 
 ```bash
-python -m nykp_conditions.noaa_currents --station NYH1928_12 --range 1w
-python -m nykp_conditions.water_temps --channel test-python-api --plot true
-python -m nykp_conditions.nws_forecast --keep     # Leaves the plot in cache/
-python -m nykp_conditions.nws_precip --station KNYC --hours 24
-python -m nykp_conditions.notify_nyc --days 7
-python -m nykp_conditions.dep_advisory --rainfall true   # Adds the rainfall chart
+# Everything, to the test channel (the default)
+nykp-conditions post
+
+# A specific channel, two days of currents
+nykp-conditions post --channel hudson-conditions --days 2
+
+# Skip sections you don't want while iterating
+nykp-conditions post --currents false --forecast false
+
+# Attach the water temperature timeseries plot (off by default)
+nykp-conditions post --water-temp-plot true
+
+# Individual sources
+nykp-conditions currents --station NYH1928_12 --range 1w
+nykp-conditions water-temps --channel test-python-api --plot true
+nykp-conditions forecast --keep          # Leaves the plot in cache/
+nykp-conditions precip --station KNYC --hours 24
+nykp-conditions notify-nyc --days 7
+nykp-conditions dep-advisory --rainfall true   # Adds the rainfall chart
 ```
+
+Each subcommand hands off to its module's own `parse_args`/`main`, so there's
+one definition of every flag and the dispatcher can't drift from it.
+`python -m nykp_conditions.<module>` still works unchanged, and
+`python -m nykp_conditions` reaches the dispatcher.
 
 ### Using it as a library
 
@@ -162,7 +180,7 @@ workflow installs this package, runs the module, and lets Hugo templates style
 the result -- nothing generated is committed to the site repo.
 
 ```bash
-python -m nykp_conditions.web_export \
+nykp-conditions web-export \
     --out data/conditions.json \
     --img-dir static/img/conditions \
     --img-url /img/conditions
@@ -203,6 +221,7 @@ the version the daily job actually uses.
 
 ```
 nykp_conditions/
+  cli.py               The `nykp-conditions` command (subcommand dispatch)
   post_conditions.py   Entry point for the daily post
   web_export.py        JSON + images for the website conditions page
   noaa_currents.py     Tidal current predictions
