@@ -16,24 +16,46 @@ Listed in the order they're posted:
 | Water temperature range (low/high and when), last 36 hours | NOAA Tides & Currents | `water_temps.py` |
 | Forecast meteogram and text summary | forecast.weather.gov (scraped) | `nws_forecast.py` |
 | Observed precipitation, last 24 hours, with a plot | api.weather.gov station observations | `nws_precip.py` |
-| Waterbody advisories (e.g. sewage discharge) | Notify NYC RSS feed | `notify_nyc.py` |
-| Advisory status for the Hudson off Pier 96, with a citywide map | NYC DEP Waterbody Advisory Dashboard | `dep_advisory.py` |
+| Waterbody advisory status for the Hudson off Pier 96, with a citywide map when it's on advisory | NYC DEP Waterbody Advisory Dashboard | `dep_advisory.py` |
 
 Each section posts independently. If one upstream source is down the others
 still go out; the run then fails at the end so the failure is visible in the
 Actions log rather than silently swallowed.
 
-The DEP section is the one exception to "every section posts every day": it
-stays quiet unless the Hudson is actually on advisory, since a standing "no
-advisory" line would be noise on most days. Pass `--post-when-clear` when
-running it by hand to see the all-clear.
+### The advisory section
 
-The post always names the 24-hour and 96-hour rainfall totals at the gauge the
-advisory is keyed to, which is what explains an advisory that outlasts the
-rain. The gauge's hourly *chart* is opt-in (`--dep-rainfall true` on the daily
-run, `--rainfall true` on the script), since `nws_precip.py` already posts an
-observed-precipitation plot daily. When it's on, both images go out as a single
-Slack message.
+An advisory is the one thing in the post that can stop someone getting on the
+water, so the section says something every day -- but at the level of detail
+the day warrants:
+
+| Hudson River (Manhattan) | Rest of the city | What posts |
+| --- | --- | --- |
+| On advisory | — | Until-when, hours remaining, gauge rainfall totals, the citywide count, and the map |
+| Clear | Some waterbodies on advisory | One line: no advisory for the Hudson, and how many others are on one |
+| Clear | Clear | One line: no active advisories anywhere in the city |
+
+All three lead with a link to the [Waterbody Advisory
+dashboard](https://nycwaterbodyadvisory.azurewebsites.net/) — the portal that
+carries per-waterbody status, not `nyc.gov/site/dep/water/waterbody-advisories.page`,
+DEP's general explainer page.
+
+When the Hudson is on advisory the post names the 24-hour and 96-hour rainfall
+totals at the gauge the advisory is keyed to, which is what explains an
+advisory that outlasts the rain. The gauge's hourly *chart* is opt-in
+(`--dep-rainfall true` on the daily run, `--rainfall true` on the script),
+since `nws_precip.py` already posts an observed-precipitation plot daily. When
+it's on, both images go out as a single Slack message.
+
+#### Why Notify NYC was dropped
+
+This used to be two sections: `notify_nyc.py` reposted the city's Notify NYC
+waterbody alerts, and `dep_advisory.py` read the dashboard. Those alerts are
+generated *from* that same dashboard, and the feed carries no waterbody field
+to filter on — so on the morning of 2026-08-26, with combined sewer overflows
+in Flushing Creek, Newtown Creek and three others but the Hudson clear, the
+daily job posted a waterbody advisory anyway. The alerts' only unique content
+was a bit.ly to DEP's general advisories page, which the dashboard link
+supersedes. `notify_nyc.py` is gone; the dashboard is the single source.
 
 ### The advisory map
 
@@ -44,9 +66,9 @@ operation to hit either. `dep_advisory.py` pulls the waterbody polygons
 instead — generalized, which takes them from 10 MB to ~140 KB — joins them to
 the live advisory status on `FID`, and draws the map itself.
 
-Two sources, deliberately kept separate: Notify NYC tells us what the city
-*announced*, while the DEP dashboard carries the hour-by-hour status of all 45
-waterbodies whether or not anything was announced.
+The map goes out only when the Hudson itself is on advisory. On a clear
+morning the citywide count and the dashboard link say everything a one-line
+section needs to.
 
 ## How it runs
 
@@ -70,7 +92,7 @@ channel.
 
 GitHub's own `schedule:` trigger was dropped because it ran two to three hours
 late in practice (10:58am and 11:22am EDT against an 8:30am cron), well past the
-~8am window when Notify NYC publishes waterbody advisories after heavy rain.
+~8am window in which DEP posts waterbody advisories after overnight rain.
 Scheduled events are the lowest-priority queue on shared runners and carry no
 delivery guarantee. Dispatched runs start within seconds, and an external
 schedule also follows DST, which a UTC cron cannot.
@@ -120,7 +142,6 @@ nykp-conditions post --help     # A command's own options
 | `water-temps` | Water temperature range |
 | `forecast` | NWS text forecast and meteogram |
 | `precip` | Observed precipitation |
-| `notify-nyc` | Waterbody advisories announced through Notify NYC |
 | `dep-advisory` | DEP waterbody advisory status and citywide map |
 
 ```bash
@@ -141,7 +162,6 @@ nykp-conditions currents --station NYH1928_12 --range 1w
 nykp-conditions water-temps --channel test-python-api --plot true
 nykp-conditions forecast --keep          # Leaves the plot in cache/
 nykp-conditions precip --station KNYC --hours 24
-nykp-conditions notify-nyc --days 7
 nykp-conditions dep-advisory --rainfall true   # Adds the rainfall chart
 ```
 
@@ -227,8 +247,7 @@ nykp_conditions/
   noaa_currents.py     Tidal current predictions
   water_temps.py       Water temperature range (plot optional)
   nws_forecast.py      NWS meteogram + text forecast
-  notify_nyc.py        Notify NYC waterbody advisories
-  dep_advisory.py      DEP advisory status + citywide map
+  dep_advisory.py      Waterbody advisory status + citywide map
   nws_precip.py        Observed precipitation + plot
   utils/
     slack.py           Posting, retries on transient errors, channel lookup

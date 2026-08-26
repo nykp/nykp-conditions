@@ -21,7 +21,6 @@ from collections.abc import Sequence
 from . import (
     dep_advisory,
     noaa_currents,
-    notify_nyc,
     nws_forecast,
     nws_precip,
     post_conditions,
@@ -41,7 +40,6 @@ COMMANDS = {
     'water-temps': (water_temps, 'Water temperature range'),
     'forecast': (nws_forecast, 'NWS text forecast and meteogram'),
     'precip': (nws_precip, 'Observed precipitation'),
-    'notify-nyc': (notify_nyc, 'Waterbody advisories announced through Notify NYC'),
     'dep-advisory': (dep_advisory, 'DEP waterbody advisory status and citywide map'),
 }
 

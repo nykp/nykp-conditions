@@ -1,9 +1,13 @@
 """Waterbody advisories from the NYC DEP Waterbody Advisory Dashboard.
 
-Where `notify_nyc.py` reports what the city *announced*, this reads the
-dashboard those announcements come from
-(https://nycwaterbodyadvisory.azurewebsites.net/), which carries the current
-status of all 45 waterbodies whether or not anything was announced.
+The one waterbody-advisory source. This used to sit beside `notify_nyc.py`,
+which reposted the city's Notify NYC alerts, but those alerts are generated
+from this same dashboard and carry no waterbody we can filter on -- so a CSO
+in Flushing Creek posted to the channel as an advisory, on a morning the
+Hudson off Pier 96 was clear. The dashboard itself is per-waterbody
+(https://nycwaterbodyadvisory.azurewebsites.net/), so reading it directly says
+whether *our* water is on advisory, and its portal is a better link than the
+bit.ly the alerts carried, which only reached DEP's general advisories page.
 
 The dashboard's map can't be downloaded: it's an ArcGIS JS layer painted onto
 a canvas in the browser, and its FeatureServer advertises `Query` but not
@@ -444,13 +448,33 @@ def format_advisory_post(
         gauge_name: str | None = None,
         with_class: bool = False,
 ) -> str:
-    """Build the Slack message body for one waterbody's advisory."""
-    header = f"<{DASHBOARD_URL}|DEP waterbody advisory>: *{advisory.waterbody}*"
+    """Build the Slack message body for one waterbody's advisory.
+
+    Three levels of detail, because a post that reads the same whether or not
+    we can get on the water is worse than no post at all:
+
+    * our waterbody on advisory -- the full account, and the caller adds the map
+    * our waterbody clear while others aren't -- one line saying which it is
+    * a quiet city -- a single all-clear
+
+    Every one of them leads with the dashboard link, so the reader can check
+    the live status of any waterbody without us listing all 45.
+    """
+    header = f"<{DASHBOARD_URL}|DEP waterbody advisory>"
     if not advisory.active:
-        return f"{header}\n*No advisory.*"
+        lines = [f"{header}: *No advisory for {advisory.waterbody}.*"]
+        # Our own waterbody is clear in this branch, so counting the whole
+        # list and counting "the others" give the same number.
+        elsewhere = sum(1 for a in (advisories or []) if a.active)
+        if elsewhere:
+            lines.append(f"_{elsewhere} of {len(advisories)} NYC waterbodies are on "
+                         f"advisory after recent rain; ours isn't one of them._")
+        elif advisories:
+            lines.append('_No active advisories anywhere in the city._')
+        return '\n'.join(lines)
 
     lines = [
-        header,
+        f"{header}: *{advisory.waterbody}*",
         f"*On advisory until {format_hour(advisory.until)}* "
         f"({advisory.duration_hours:.0f} more hours as of {format_hour(advisory.occurred_on)})",
     ]
@@ -473,14 +497,16 @@ def format_advisory_post(
 def post_waterbody_advisory(
         channel: str,
         waterbody: str = HOME_WATERBODY,
-        post_when_clear: bool = False,
         plot_rainfall: bool = False,
 ) -> None:
-    """Post the waterbody's advisory status to Slack, with a map of the city's.
+    """Post the waterbody's advisory status to Slack.
 
-    Silent when there's no advisory, unless `post_when_clear`. `plot_rainfall`
-    attaches the gauge chart, off by default since `nws_precip.py` already
-    posts precipitation.
+    Posts every day, at the level of detail the day warrants (see
+    `format_advisory_post`). Only an advisory on our own waterbody earns the
+    citywide map; on a clear morning the dashboard link carries whatever else
+    someone wants to look up. `plot_rainfall` adds the gauge chart to an
+    active advisory, off by default since `nws_precip.py` already posts
+    precipitation.
     """
     # Retries past the warm-up, so the citywide counts below are off a whole
     # list rather than a partial one.
@@ -492,8 +518,8 @@ def post_waterbody_advisory(
 
     print(f"DEP advisory for {advisory.waterbody}: {advisory.message}")
     if not advisory.active:
-        if post_when_clear:
-            post_message(format_advisory_post(advisory), channel=channel, unfurl_links=False)
+        post_message(format_advisory_post(advisory, advisories),
+                     channel=channel, unfurl_links=False)
         return
 
     gauge_rainfall, gauge_name = None, None
@@ -527,8 +553,6 @@ def parse_args():
     parser = ArgumentParser(description='Post NYC DEP waterbody advisory status to Slack.')
     parser.add_argument('--channel', type=str, default=NykpSlackChannels.test_python_api)
     parser.add_argument('--waterbody', type=str, default=HOME_WATERBODY)
-    parser.add_argument('--post-when-clear', action='store_true',
-                        help='Post a "no advisory" line instead of staying quiet')
     parser.add_argument('--rainfall', type=str2bool, default=False,
                         help='Also attach the gauge rainfall chart (default: False)')
     return parser
@@ -536,7 +560,6 @@ def parse_args():
 
 def main(args):
     post_waterbody_advisory(args.channel, waterbody=args.waterbody,
-                            post_when_clear=args.post_when_clear,
                             plot_rainfall=args.rainfall)
 
 
