@@ -183,26 +183,83 @@ def test_water_class_is_opt_in():
     assert 'Class SB' in dep.format_advisory_post(advisory, with_class=True)
 
 
-def test_format_post_when_clear():
+"""----------------------------------------------------------------------------
+The three tiers of a clear-or-not morning
+
+Regression: the retired notify_nyc.py reposted every Notify NYC waterbody
+alert, so a CSO in Flushing Creek read as an advisory on a morning the Hudson
+was clear. What the post says now turns on our own waterbody's status.
+----------------------------------------------------------------------------"""
+
+
+def _clear_and_active(active_elsewhere=1, clear_elsewhere=0):
+    """Our waterbody clear, with `active_elsewhere` others on advisory."""
+    records = [_record('Hudson River (Manhattan)', 0.0)]
+    records += [_record(f'Creek {i}', 6.0, wb_id=100 + i) for i in range(active_elsewhere)]
+    records += [_record(f'Bay {i}', 0.0, wb_id=200 + i) for i in range(clear_elsewhere)]
+    return [dep.WaterbodyAdvisory.parse(r) for r in records]
+
+
+def test_format_post_when_clear_everywhere():
+    advisories = [dep.WaterbodyAdvisory.parse(_record('Hudson River (Manhattan)', 0.0))]
+    text = dep.format_advisory_post(advisories[0], advisories)
+    assert 'No advisory for Hudson River (Manhattan).' in text
+    assert 'No active advisories anywhere in the city.' in text
+
+
+def test_format_post_when_clear_here_but_not_elsewhere():
+    """The bug that started this: an advisory somewhere else in the city is not
+    a reason to tell the channel the Hudson is off limits."""
+    advisories = _clear_and_active(active_elsewhere=5, clear_elsewhere=39)
+    text = dep.format_advisory_post(advisories[0], advisories)
+    assert 'No advisory for Hudson River (Manhattan).' in text
+    assert "5 of 45 NYC waterbodies are on advisory" in text
+    assert "ours isn't one of them" in text
+
+
+def test_every_tier_links_the_dashboard_portal():
+    """Not nyc.gov/site/dep/water/waterbody-advisories.page, which is where the
+    Notify NYC bit.ly links landed: that page has no per-waterbody status."""
+    clear_everywhere = [dep.WaterbodyAdvisory.parse(_record('Hudson River (Manhattan)', 0.0))]
+    clear_here = _clear_and_active(active_elsewhere=2)
+    active_here = [dep.WaterbodyAdvisory.parse(_record('Hudson River (Manhattan)', 16.0))]
+    for advisories in (clear_everywhere, clear_here, active_here):
+        text = dep.format_advisory_post(advisories[0], advisories)
+        assert 'https://nycwaterbodyadvisory.azurewebsites.net/' in text
+        assert 'nyc.gov' not in text
+
+
+def test_format_post_without_the_citywide_list_stays_brief():
+    """`advisories` is optional; without it there's no count to report and the
+    post shouldn't invent one."""
     advisory = dep.WaterbodyAdvisory.parse(_record('Hudson River (Manhattan)', 0.0))
-    assert 'No advisory.' in dep.format_advisory_post(advisory)
+    text = dep.format_advisory_post(advisory)
+    assert text.endswith('*No advisory for Hudson River (Manhattan).*')
 
 
-def test_post_stays_quiet_when_there_is_no_advisory(fake_api, monkeypatch):
-    fake_api({'/advisory': [_record('Hudson River (Manhattan)', 0.0)]})
-    posted = []
-    monkeypatch.setattr(dep, 'post_message', lambda *a, **k: posted.append(a))
-    monkeypatch.setattr(dep, 'post_files', lambda *a, **k: posted.append(a))
-    dep.post_waterbody_advisory('test-channel')
-    assert posted == []
-
-
-def test_post_when_clear_flag_posts_text(fake_api, monkeypatch):
+def test_post_says_so_when_clear_everywhere(fake_api, monkeypatch):
     fake_api({'/advisory': [_record('Hudson River (Manhattan)', 0.0)]})
     posted = []
     monkeypatch.setattr(dep, 'post_message', lambda text, **k: posted.append(text))
-    dep.post_waterbody_advisory('test-channel', post_when_clear=True)
-    assert len(posted) == 1 and 'No advisory.' in posted[0]
+    monkeypatch.setattr(dep, 'post_files',
+                        lambda *a, **k: pytest.fail('no map when we are clear'))
+    dep.post_waterbody_advisory('test-channel')
+    assert len(posted) == 1
+    assert 'No active advisories anywhere in the city.' in posted[0]
+
+
+def test_post_names_the_count_when_only_elsewhere_is_on_advisory(fake_api, monkeypatch):
+    fake_api({'/advisory': [_record('Hudson River (Manhattan)', 0.0),
+                            _record('Flushing Creek', 12.0, wb_id=30)]})
+    posted = []
+    monkeypatch.setattr(dep, 'post_message', lambda text, **k: posted.append(text))
+    # No map, no rainfall, no polygon fetch: a clear morning is one line and a
+    # link, which is also why the fake above serves no /query or /sensors.
+    monkeypatch.setattr(dep, 'post_files',
+                        lambda *a, **k: pytest.fail('no map when we are clear'))
+    dep.post_waterbody_advisory('test-channel')
+    assert len(posted) == 1
+    assert '1 of 2 NYC waterbodies are on advisory' in posted[0]
 
 
 @pytest.fixture

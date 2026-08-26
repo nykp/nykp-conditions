@@ -54,7 +54,6 @@ from .noaa_currents import (
     normalize_currents_table,
     retrieve_currents_table,
 )
-from .notify_nyc import NOTIFY_NYC_URL, get_waterbody_advisories
 from .nws_forecast import DEFAULT_LAT_LON, get_forecast_text, save_forecast_plot
 from .nws_precip import (
     DEFAULT_STATION as PRECIP_STATION,
@@ -222,25 +221,6 @@ def build_precip(img_dir: str | None = None, img_url: str | None = None,
     return section
 
 
-def build_notify_advisories(days: int = 1) -> dict:
-    """Waterbody advisories announced through Notify NYC."""
-    start = pendulum.now(DEFAULT_TIMEZONE).subtract(days=days)
-    alerts = get_waterbody_advisories(start_dt=start)
-    return {
-        'source_url': NOTIFY_NYC_URL,
-        'days': days,
-        'alerts': [
-            {
-                'title': a.title,
-                'published': _iso(a.published),
-                'published_display': format_hour(a.published) if a.published else None,
-                'summary': a.summary,
-            }
-            for a in alerts
-        ],
-    }
-
-
 def build_dep_advisory(img_dir: str | None = None, img_url: str | None = None,
                        waterbody: str = HOME_WATERBODY, rainfall_plot: bool = False) -> dict:
     """DEP advisory status for our stretch of the Hudson, plus the citywide map."""
@@ -262,6 +242,10 @@ def build_dep_advisory(img_dir: str | None = None, img_url: str | None = None,
         'class_description': advisory.class_description,
         'active_count': sum(1 for a in advisories if a.active),
         'total_count': len(advisories),
+        # The page says something different on a morning when we're clear but
+        # the rest of the city isn't, so it needs both figures, not just ours.
+        'elsewhere_active_count': sum(1 for a in advisories
+                                      if a.active and a.waterbody != waterbody),
         'source_url': DASHBOARD_URL,
     }
     if advisory.active:
@@ -326,7 +310,6 @@ def build_conditions(
         ('water_temp', lambda: build_water_temp(img_dir, img_url, plot=water_temp_plot)),
         ('forecast', lambda: build_forecast(img_dir, img_url)),
         ('precip', lambda: build_precip(img_dir, img_url)),
-        ('notify_advisories', lambda: build_notify_advisories()),
         ('dep_advisory', lambda: build_dep_advisory(
             img_dir, img_url, rainfall_plot=dep_rainfall_plot)),
     ])

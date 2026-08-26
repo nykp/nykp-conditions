@@ -53,7 +53,7 @@ def test_build_conditions_lists_unavailable_sections(monkeypatch):
         raise RuntimeError('down')
 
     for name in ('build_currents', 'build_water_temp', 'build_forecast',
-                 'build_precip', 'build_notify_advisories', 'build_dep_advisory'):
+                 'build_precip', 'build_dep_advisory'):
         monkeypatch.setattr(we, name, boom)
 
     conditions = we.build_conditions()
@@ -65,7 +65,7 @@ def test_build_conditions_lists_unavailable_sections(monkeypatch):
 
 def test_build_conditions_reports_no_unavailable_when_everything_works(monkeypatch):
     for name in ('build_currents', 'build_water_temp', 'build_forecast',
-                 'build_precip', 'build_notify_advisories', 'build_dep_advisory'):
+                 'build_precip', 'build_dep_advisory'):
         monkeypatch.setattr(we, name, lambda *a, **k: {'ok': True})
     assert we.build_conditions()['unavailable'] == []
 
@@ -271,7 +271,6 @@ def test_written_json_is_serializable_end_to_end(monkeypatch, tmp_path):
                         lambda station=None, **kw: CurrentsPredictions(CURRENTS_CSV.copy(), 'u'))
     monkeypatch.setattr(we, 'get_observed_precip', lambda *a, **k: _precip())
     monkeypatch.setattr(we, 'get_forecast_text', lambda *a, **k: ForecastText('t', 'Tonight: x.'))
-    monkeypatch.setattr(we, 'get_waterbody_advisories', lambda *a, **k: [])
     monkeypatch.setattr(we, 'get_complete_advisories', lambda *a, **k: [_advisory(duration=16.0)])
 
     conditions = we.build_conditions()

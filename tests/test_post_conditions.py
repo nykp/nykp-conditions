@@ -11,8 +11,7 @@ SECTION_POSTERS = {
     'post_water_temps': 'water-temp',
     'post_forecast': 'forecast',
     'post_observed_precip': 'precip',
-    'post_waterbody_advisories': 'advisories',
-    'post_waterbody_advisory': 'DEP advisory',
+    'post_waterbody_advisory': 'advisories',
 }
 
 
@@ -93,7 +92,7 @@ def test_main_succeeds_when_all_sections_post(posted):
 
 def test_sections_can_be_disabled(posted):
     args = pc.parse_args().parse_args(
-        ['--currents', 'false', '--forecast', 'no', '--precip', '0', '--dep-advisory', 'false']
+        ['--currents', 'false', '--forecast', 'no', '--precip', '0']
     )
     pc.main(args)
     assert sorted(posted) == sorted(['advisories', 'water-temp'])
