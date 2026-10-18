@@ -28,7 +28,7 @@ import tempfile
 from argparse import ArgumentParser
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from urllib.request import Request, urlopen
+from urllib.request import Request
 from zoneinfo import ZoneInfo
 
 import matplotlib.pyplot as plt
@@ -37,6 +37,7 @@ import seaborn as sns
 from matplotlib.dates import DateFormatter
 
 from .utils.format import format_hour
+from .utils.http import urlopen
 from .utils.scripts import try_main
 from .utils.slack import NykpSlackChannels, post_file, post_message
 

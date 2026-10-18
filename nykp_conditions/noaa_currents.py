@@ -9,12 +9,12 @@ import tempfile
 from argparse import ArgumentParser
 from collections.abc import Sequence
 from dataclasses import dataclass, fields
-from urllib.request import urlretrieve
 
 import pandas as pd
 import pendulum
 
 from .utils.data import rename_cols
+from .utils.http import urlretrieve
 from .utils.scripts import try_main
 from .utils.slack import NykpSlackChannels, post_message, post_file
 from .utils.units import knots_to_mph

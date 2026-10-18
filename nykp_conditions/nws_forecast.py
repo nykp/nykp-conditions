@@ -13,11 +13,11 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import urljoin
-from urllib.request import urlopen, urlretrieve
 
 from bs4 import BeautifulSoup, Tag
 
 from .utils.geo import LatLon
+from .utils.http import urlopen, urlretrieve
 from .utils.scripts import try_main
 from .utils.slack import NykpSlackChannels, post_message, post_file
 

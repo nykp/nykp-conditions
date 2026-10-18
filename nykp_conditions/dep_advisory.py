@@ -41,7 +41,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from urllib.parse import urlencode, urljoin
-from urllib.request import Request, urlopen
+from urllib.request import Request
 from zoneinfo import ZoneInfo
 
 import matplotlib.pyplot as plt
@@ -53,6 +53,7 @@ from matplotlib.dates import DateFormatter
 from matplotlib.patches import Patch, Polygon
 
 from .utils.format import format_hour
+from .utils.http import urlopen
 from .utils.scripts import str2bool, try_main
 from .utils.slack import NykpSlackChannels, post_files, post_message
 

@@ -11,7 +11,6 @@ import os
 import tempfile
 from argparse import ArgumentParser
 from dataclasses import dataclass
-from urllib.request import urlopen, urlretrieve
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -19,6 +18,7 @@ import seaborn as sns
 from matplotlib.dates import DateFormatter
 
 from .utils.format import format_hour
+from .utils.http import urlopen, urlretrieve
 from .utils.plot import DateTimeFormats
 from .utils.scripts import str2bool, try_main
 from .utils.slack import NykpSlackChannels, post_file, post_message
